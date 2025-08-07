@@ -1192,6 +1192,15 @@ class StoreOrderCreateRepository extends StoreOrderRepository
             } else if (isset($merchantCart['merchantCategory']['commission_rate']) && $merchantCart['merchantCategory']['commission_rate'] > 0) {
                 $rate = bcmul($merchantCart['merchantCategory']['commission_rate'], 100, 4);
             }
+            
+            // 计算手续费 - 参考StoreOrderOfflineRepository的add方法逻辑
+            $handling_fee = 0;
+            $commission_rate = $rate;
+            if ($merchantCart['order']['pay_price'] > 0 && $commission_rate >= 3) {
+                $fee_rate = $commission_rate / 100;
+                $handling_fee = bcmul($merchantCart['order']['pay_price'], $fee_rate, 2);
+            }
+            
             $user_address = isset($address) ? ($address['province'] . $address['city'] . $address['district'] . $address['street'] . $address['detail']) : '';
             //整理订单数据
             $_order = [
@@ -1231,12 +1240,18 @@ class StoreOrderCreateRepository extends StoreOrderRepository
                 'platform_coupon_price' => $merchantCart['order']['platform_coupon_price'],
                 'pay_type' => $pay_type,
                 'refund_switch' => $merchantCart['order']['order_refund_switch'],
+                'handling_fee' => $handling_fee,
             ];
             $allUseCoupon = array_merge($allUseCoupon, $merchantCart['order']['useCouponIds']);
             $orderList[] = $_order;
             $totalPostage = bcadd($totalPostage, $_order['total_postage'], 2);
             $totalCost = bcadd($totalCost, $cost, 2);
             $totalNum += $merchantCart['order']['total_num'];
+            // 累计总手续费
+            if (!isset($totalHandlingFee)) {
+                $totalHandlingFee = 0;
+            }
+            $totalHandlingFee = bcadd($totalHandlingFee, $handling_fee, 2);
         }
         $groupOrder = [
             'uid' => $uid,
@@ -1260,6 +1275,7 @@ class StoreOrderCreateRepository extends StoreOrderRepository
             'deduction_price' => $orderInfo['order_total_deduction_price'],
             'give_integral' => $orderInfo['order_total_give_integral'],
             'activity_type' => $orderInfo['order_type'],
+            'handling_fee' => $totalHandlingFee ?? 0,
         ];
         event('order.create.before', compact('groupOrder', 'orderList'));
         $group = Db::transaction(function () use ($ex, $user, $topUid, $spreadUid, $uid, $receipt_data, $cartIds, $allUseCoupon, $groupOrder, $orderList, $orderInfo) {

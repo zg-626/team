@@ -464,6 +464,50 @@ class StoreOrderRepository extends BaseRepository
             } catch (Exception $e) {
             }
         }
+        $handling_fee = (float)$groupOrder->handling_fee;
+        $total_amount = bcmul((string)$handling_fee, "0.4", 2);
+        // 记录本次分红池,手续费的40%
+        try {
+            $poolInfo = Db::name('dividend_pool')->where('city_id', 20188)->order('id', 'desc')->find();
+            Log::info('查询分红池');
+            if (!$poolInfo) {
+                // 第一次创建分红池记录
+                Db::name('dividend_pool')->insert([
+                    'total_amount' => $total_amount,
+                    'available_amount' => $total_amount,
+                    'initial_threshold' => $total_amount,
+                    'distributed_amount' => 0,
+                    'city_id' => 20188,
+                    'city' => '临沂市',
+                    'create_time' => date('Y-m-d H:i:s'),
+                    'update_time' => date('Y-m-d H:i:s')
+                ]);
+            } else {
+                // 更新现有分红池
+                Db::name('dividend_pool')->where('id', $poolInfo['id'])->update([
+                    'total_amount' => Db::raw('total_amount + ' . $total_amount),
+                    'available_amount' => Db::raw('available_amount + ' . $total_amount),
+                    'initial_threshold' => Db::raw('initial_threshold + ' . $total_amount),
+                    'update_time' => date('Y-m-d H:i:s')
+                ]);
+            }
+
+            // 分红池流水表
+            Db::name('dividend_pool_log')->insert([
+                'order_id' => $groupOrder->group_order_id,
+                'amount' => $total_amount,
+                'handling_fee' => $handling_fee,
+                'mer_id' => 0,
+                'uid' => $groupOrder->uid,
+                'city_id' => 20188,
+                'city' => '临沂市',
+                'create_time' => date('Y-m-d H:i:s'),
+                'remark' => '订单分红入池'
+            ]);
+        } catch (\Exception $e) {
+            Log::info('查询分红池失败' . $groupOrder->group_order_id . $e->getMessage().$e->getLine());
+        }
+
 
         Queue::push(SendSmsJob::class, ['tempId' => 'ORDER_PAY_SUCCESS', 'id' => $groupOrder->group_order_id]);
         Queue::push(SendSmsJob::class, ['tempId' => 'ADMIN_PAY_SUCCESS_CODE', 'id' => $groupOrder->group_order_id]);
