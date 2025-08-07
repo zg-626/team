@@ -32,6 +32,14 @@ Route::group(function () {
         Route::get('detail/:id', 'Order/detail')->name('systemSpreadOrderDetail')->option([
             '_alias' => '详情',
         ]);
+        Route::get('status/:id/form', '/switchStatusForm')->name('systemOrderSwitchStatusForm')->option([
+            '_alias' => '审核表单',
+            '_auth' => false,
+            '_form' => 'systemOrderSwitchStatus',
+        ]);
+        Route::post('status/:id', '/switchStatus')->name('systemOrderSwitchStatus')->option([
+            '_alias' => '审核',
+        ]);
         Route::get('excel', 'Order/Excel')->name('systemSpreadOrderExcel')->option([
             '_alias' => '导出',
         ]);

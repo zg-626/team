@@ -448,7 +448,7 @@ class StoreOrderRepository extends BaseRepository
             // 赠送积分
             $this->giveIntegral($groupOrder,'线上');
             // 代理赠送佣金 TODO  有bug需要修复
-            $this->addCommission($order->mer_id,$groupOrder);
+            //$this->addCommission($order->mer_id,$groupOrder);
             if (count($profitsharing)) {
                 $storeOrderProfitsharingRepository->insertAll($profitsharing);
             }

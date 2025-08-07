@@ -18,7 +18,10 @@ use app\common\repositories\store\ExcelRepository;
 use app\common\repositories\system\merchant\MerchantRepository;
 use app\common\repositories\store\order\StoreOrderRepository as repository;
 use crmeb\services\ExcelService;
+use FormBuilder\Factory\Elm;
 use think\App;
+use think\exception\ValidateException;
+use think\facade\Route;
 
 class Order extends BaseController
 {
@@ -218,5 +221,184 @@ class Order extends BaseController
     {
         $data = $this->repository->childrenList($id, 0);
         return app('json')->success($data);
+    }
+
+    /**
+     * 线上订单审核表单
+     * @param int $id
+     * @return mixed
+     */
+    public function switchStatusForm($id)
+    {
+        $order = $this->repository->getOne($id, null);
+        if (!$order) {
+            throw new ValidateException('数据不存在');
+        }
+
+        // 检查是否为线下支付订单
+        if ($order->pay_type !== 'offline') {
+            throw new ValidateException('非线下支付订单，无需审核');
+        }
+
+        if ($order->paid == 1) {
+            throw new ValidateException('订单已支付，无需审核');
+        }
+
+        // 检查是否已经审核过
+        if ($order->offline_audit_status == 1) {
+            throw new ValidateException('订单已审核通过');
+        }
+        if ($order->offline_audit_status == -1) {
+            throw new ValidateException('订单已审核拒绝');
+        }
+
+        $arr=Elm::createForm(Route::buildUrl('systemOrderSwitchStatus', compact('id'))->build(), [
+            // 订单价格
+            Elm::input('pay_price', '订单价格：')->value($order->pay_price)->disabled(true),
+            // 支付凭证
+            Elm::frameImage('payment_voucher', '支付凭证：', '/' . config('admin.admin_prefix') . '/setting/uploadPicture?field=payment_voucher&type=1')
+                ->value($order->payment_voucher ?? '')
+                ->disabled(true)
+                ->modal(['modal' => false])
+                ->icon('el-icon-camera')
+                ->width('1000px')
+                ->height('600px'),
+            // 当前审核状态显示
+            Elm::input('current_status', '当前状态：')->value($this->getAuditStatusText($order->offline_audit_status))->disabled(true),
+            Elm::radio('status', '审核状态：', 1)->options(
+                [['value' => -1, 'label' => '拒绝'], ['value' => 1, 'label' => '通过']])
+                ->control([
+                    ['value' => -1, 'rule' => [
+                        Elm::textarea('fail_msg', '拒绝原因：', '信息有误,请完善')->placeholder('请输入拒绝理由')->required()
+                    ]]
+                ]),
+        ])->setTitle('线下支付订单审核');
+
+        return app('json')->success(formToData($arr));
+    }
+
+    /**
+     * 线上订单审核处理
+     * @param int $id
+     * @return mixed
+     */
+    public function switchStatus($id)
+    {
+        $data = $this->request->params(['status', 'fail_msg']);
+
+        $order = $this->repository->getOne($id, null);
+        if (!$order) {
+            return app('json')->fail('订单不存在');
+        }
+
+        // 检查是否为线下支付订单
+        if ($order->pay_type !== 'offline') {
+            return app('json')->fail('非线下支付订单，无需审核');
+        }
+
+        if ($order->paid == 1) {
+            return app('json')->fail('订单已支付，无需审核');
+        }
+
+        // 检查是否已经审核过
+        if ($order->offline_audit_status != 0) {
+            return app('json')->fail('订单已审核，无法重复操作');
+        }
+
+        // 检查是否上传了支付凭证
+        if (empty($order->payment_voucher)) {
+            return app('json')->fail('用户未上传支付凭证，无法审核');
+        }
+
+        try {
+            if ($data['status'] == 1) {
+                // 审核通过，更新审核状态
+                $this->repository->update($order->order_id, [
+                    'offline_audit_status' => 1,
+                    'fail_msg' => ''
+                ]);
+
+                // 触发支付成功回调
+                $paySuccessData = [
+                    'order_sn' => $order->order_sn,
+                    'data' => [
+                        'acc_trade_no' => 'OFFLINE_APPROVE_' . time(),
+                        'log_no' => 'LOG_' . time(),
+                        'trade_no' => 'TRADE_' . time(),
+                        'trade_time' => date('Y-m-d H:i:s'),
+                        'remark' => 'offline_payment_approved'
+                    ]
+                ];
+
+                // 调用支付成功方法
+                $result = $this->repository->paySuccess($paySuccessData);
+
+                if ($result) {
+                    // 记录审核日志
+                    $this->recordAuditLog($order, 1, '平台审核通过');
+                    return app('json')->success('审核通过，订单支付成功');
+                } else {
+                    // 如果支付成功失败，回滚审核状态
+                    $this->repository->update($order->order_id, [
+                        'offline_audit_status' => 0
+                    ]);
+                    return app('json')->fail('审核处理失败');
+                }
+            } else {
+                // 审核拒绝，更新订单状态和审核状态
+                $updateData = [
+                    'offline_audit_status' => -1,
+                    'status' => -1,
+                    'fail_msg' => $data['fail_msg'] ?? '审核拒绝'
+                ];
+                
+                $this->repository->update($order->order_id, $updateData);
+                
+                // 记录审核日志
+                $this->recordAuditLog($order, -1, $data['fail_msg'] ?? '平台审核拒绝');
+                return app('json')->success('审核已拒绝');
+            }
+        } catch (\Exception $e) {
+            return app('json')->fail('审核处理异常：' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取审核状态文本
+     * @param int $status
+     * @return string
+     */
+    private function getAuditStatusText($status)
+    {
+        switch ($status) {
+            case 0:
+                return '待审核';
+            case 1:
+                return '审核通过';
+            case -1:
+                return '审核拒绝';
+            default:
+                return '未知状态';
+        }
+    }
+
+    /**
+     * 记录审核日志
+     * @param object $order
+     * @param int $status
+     * @param string $remark
+     */
+    private function recordAuditLog($order, $status, $remark)
+    {
+        // 这里可以记录审核日志到数据库
+        // 暂时使用日志记录
+        \think\facade\Log::info('线下支付订单审核', [
+            'order_id' => $order->order_id,
+            'order_sn' => $order->order_sn,
+            'offline_audit_status' => $status,
+            'remark' => $remark,
+            'admin_id' => request()->adminId() ?? 0,
+            'audit_time' => date('Y-m-d H:i:s')
+        ]);
     }
 }

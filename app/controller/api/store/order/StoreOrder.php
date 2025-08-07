@@ -165,17 +165,20 @@ class StoreOrder extends BaseController
                 return app('json')->fail('该订单不是线下支付订单');
             }
             
-            // 更新订单支付凭证
-            $groupOrder->paid = 1;
-            $groupOrder->pay_time = date('Y-m-d H:i:s');
+            // 检查是否已经上传过支付凭证
+            if (!empty($groupOrder->payment_voucher)) {
+                return app('json')->fail('支付凭证已上传，请等待审核');
+            }
+            
+            // 更新订单支付凭证，但不设置为已支付，等待审核
             $groupOrder->payment_voucher = $paymentVoucher;
+            $groupOrder->offline_audit_status = 0; // 设置为待审核状态
             $groupOrder->save();
             
             // 同时更新子订单的支付凭证
             foreach ($groupOrder->orderList as $order) {
-                $order->paid = 1;
-                $order->pay_time = date('Y-m-d H:i:s');
                 $order->payment_voucher = $paymentVoucher;
+                $order->offline_audit_status = 0; // 设置为待审核状态
                 $order->save();
             }
             
