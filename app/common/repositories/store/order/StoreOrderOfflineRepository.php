@@ -897,8 +897,8 @@ class StoreOrderOfflineRepository extends BaseRepository
 
         // 所有身份赠送佣金
         /** @var StoreOrderRepository $storeOrderRepository */
-        $storeOrderRepository = app()->make(StoreOrderRepository::class);
-        $storeOrderRepository->addCommission($order->mer_id,$order);
+        /*$storeOrderRepository = app()->make(StoreOrderRepository::class);
+        $storeOrderRepository->addCommission($order->mer_id,$order);*/
 
         // 发放推广抵用券
         $this->computed($order,$user);
