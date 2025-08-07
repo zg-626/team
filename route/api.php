@@ -79,6 +79,7 @@ Route::group('api/', function () {
             Route::get('verify_code/:id', '/verifyCode');
             Route::post('receipt/:id', '/createReceipt');
             Route::get('delivery/:id', '/getOrderDelivery');
+            Route::post('upload_payment_voucher/:id', '/uploadPaymentVoucher');
             //Route::post('check', 'PointsOrder/beforCheck');
             Route::post('/offline/create', 'Offline/createOrder');
             Route::get('/offline/list', 'Offline/getList');

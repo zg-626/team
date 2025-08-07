@@ -69,6 +69,12 @@ class StoreOrder extends BaseController
         return app('json')->success($orderInfo);
     }
 
+    /**
+     * 生成订单(线上)
+     * @param StoreCartRepository $cartRepository
+     * @param StoreOrderCreateRepository $orderCreateRepository
+     * @return mixed
+     */
     public function v2CreateOrder(StoreCartRepository $cartRepository, StoreOrderCreateRepository $orderCreateRepository)
     {
         $cartId = (array)$this->request->param('cart_id', []);
@@ -111,7 +117,7 @@ class StoreOrder extends BaseController
             return $orderCreateRepository->v2CreateOrder($key, array_search($payType, StoreOrderRepository::PAY_TYPE), $this->request->userInfo(), $cartId, $extend, $mark, $receipt_data, $takes, $couponIds, $useIntegral, $addressId, $post);
         });
 
-        if ($groupOrder['pay_price'] == 0) {
+        if ($groupOrder['pay_price'] == 0 && $payType !== 'offline') {
             $this->repository->paySuccess($groupOrder);
             return app('json')->status('success', '支付成功', ['order_id' => $groupOrder['group_order_id']]);
         }
@@ -122,6 +128,61 @@ class StoreOrder extends BaseController
             return $this->repository->pay($payType, $this->request->userInfo(), $groupOrder, $this->request->param('return_url'), $this->request->isApp());
         } catch (\Exception $e) {
             return app('json')->status('error', $e->getMessage(), ['order_id' => $groupOrder->group_order_id]);
+        }
+    }
+
+    /**
+     * 上传线下支付凭证
+     * @return mixed
+     */
+    public function uploadPaymentVoucher()
+    {
+        $orderId = $this->request->param('order_id');
+        $paymentVoucher = $this->request->param('payment_voucher');
+        
+        if (!$orderId) {
+            return app('json')->fail('订单ID不能为空');
+        }
+        
+        if (!$paymentVoucher) {
+            return app('json')->fail('支付凭证不能为空');
+        }
+        
+        try {
+            /** @var StoreGroupOrderRepository $groupOrderRepository */
+            $groupOrderRepository = app()->make(StoreGroupOrderRepository::class);
+            $groupOrder = $groupOrderRepository->getWhere(['group_order_id' => $orderId, 'uid' => $this->request->uid()]);
+            
+            if (!$groupOrder) {
+                return app('json')->fail('订单不存在');
+            }
+            
+            if ($groupOrder->paid == 1) {
+                return app('json')->fail('订单已支付');
+            }
+            
+            if ($groupOrder->pay_type != 7) { // 7 对应 offline
+                return app('json')->fail('该订单不是线下支付订单');
+            }
+            
+            // 更新订单支付凭证
+            $groupOrder->paid = 1;
+            $groupOrder->pay_time = date('Y-m-d H:i:s');
+            $groupOrder->payment_voucher = $paymentVoucher;
+            $groupOrder->save();
+            
+            // 同时更新子订单的支付凭证
+            foreach ($groupOrder->orderList as $order) {
+                $order->paid = 1;
+                $order->pay_time = date('Y-m-d H:i:s');
+                $order->payment_voucher = $paymentVoucher;
+                $order->save();
+            }
+            
+            return app('json')->success('支付凭证上传成功，等待平台审核');
+            
+        } catch (\Exception $e) {
+            return app('json')->fail('上传失败：' . $e->getMessage());
         }
     }
 

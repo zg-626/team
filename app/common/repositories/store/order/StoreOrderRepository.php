@@ -80,9 +80,9 @@ use think\model\Relation;
 class StoreOrderRepository extends BaseRepository
 {
     /**
-     * 支付类型 0余额 1 微信 2 小程序 3 微信 4 支付宝 5 支付宝 6 微信
+     * 支付类型 0余额 1 微信 2 小程序 3 微信 4 支付宝 5 支付宝 6 微信 7 线下支付
      */
-    const PAY_TYPE = ['balance', 'weixin', 'routine', 'h5', 'alipay', 'alipayQr', 'weixinQr'];
+    const PAY_TYPE = ['balance', 'weixin', 'routine', 'h5', 'alipay', 'alipayQr', 'weixinQr', 'offline'];
     const PAY_TYPE_FILTEER = [
       0 => 0,
       1 => '1,2,3,6',
@@ -117,6 +117,15 @@ class StoreOrderRepository extends BaseRepository
 
         if ($type === 'balance') {
             return $this->payBalance($user, $groupOrder);
+        }
+
+        if ($type === 'offline') {
+            // 线下支付，不生成支付参数，直接返回订单信息
+            return app('json')->status('offline', [
+                'order_id' => $groupOrder['group_order_id'],
+                'pay_price' => $groupOrder['pay_price'],
+                'message' => '订单创建成功，请线下支付并上传支付凭证'
+            ]);
         }
 
         if (in_array($type, ['weixin', 'alipay'], true) && $isApp) {
