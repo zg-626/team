@@ -91,4 +91,122 @@ class Order extends BaseController
         return app('json')->success($data);
     }
 
+    /**
+     * 审核表单
+     * @param int $id
+     * @return mixed
+     */
+    public function switchStatusForm($id)
+    {
+        $order = $this->repository->getOne($id, null);
+        if (!$order) {
+            return app('json')->fail('订单不存在');
+        }
+        
+        if ($order->paid == 1) {
+            return app('json')->fail('订单已支付，无需审核');
+        }
+        
+        $form = [
+            [
+                'type' => 'radio',
+                'field' => 'status',
+                'title' => '审核状态',
+                'value' => 1,
+                'options' => [
+                    ['label' => '通过审核（触发支付成功）', 'value' => 1],
+                    ['label' => '拒绝审核', 'value' => 0]
+                ],
+                'props' => [
+                    'type' => 'button'
+                ]
+            ],
+            /*[
+                'type' => 'input',
+                'field' => 'remark',
+                'title' => '审核备注',
+                'value' => '',
+                'props' => [
+                    'type' => 'textarea',
+                    'placeholder' => '请输入审核备注（可选）'
+                ]
+            ]*/
+        ];
+        
+        return app('json')->success(compact('form'));
+    }
+
+    /**
+     * 审核处理
+     * @param int $id
+     * @return mixed
+     */
+    public function switchStatus($id)
+    {
+        $data = $this->request->params(['status', 'remark']);
+        
+        $order = $this->repository->getOne($id, null);
+        if (!$order) {
+            return app('json')->fail('订单不存在');
+        }
+        
+        if ($order->paid == 1) {
+            return app('json')->fail('订单已支付，无需审核');
+        }
+        
+        try {
+            if ($data['status'] == 1) {
+                // 审核通过，触发支付成功回调
+                /*$paySuccessData = [
+                    'order_sn' => $order->order_sn,
+                    'data' => [
+                        'acc_trade_no' => 'ADMIN_APPROVE_' . time(),
+                        'log_no' => 'LOG_' . time(),
+                        'trade_no' => 'TRADE_' . time(),
+                        'trade_time' => date('Y-m-d H:i:s'),
+                        'remark' => 'offline_order'
+                    ]
+                ];*/
+                
+                // 调用支付成功方法
+                //$result = $this->repository->paySuccess($paySuccessData);
+                $result = $this->repository->computeds($order);
+
+                if ($result) {
+                    // 记录审核日志
+                    $this->recordAuditLog($order, 1, $data['remark'] ?? '平台审核通过');
+                    return app('json')->success('审核通过，订单支付成功');
+                } else {
+                    return app('json')->fail('审核处理失败');
+                }
+            } else {
+                // 审核拒绝，可以在这里添加拒绝逻辑
+                $this->recordAuditLog($order, 0, $data['remark'] ?? '平台审核拒绝');
+                return app('json')->success('审核已拒绝');
+            }
+        } catch (\Exception $e) {
+            return app('json')->fail('审核处理异常：' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 记录审核日志
+     * @param object $order
+     * @param int $status
+     * @param string $remark
+     */
+    private function recordAuditLog($order, $status, $remark)
+    {
+        // 这里可以记录审核日志到数据库
+        // 暂时使用日志记录
+        \think\facade\Log::info('线下订单审核', [
+            'order_id' => $order->order_id,
+            'order_sn' => $order->order_sn,
+            'status' => $status,
+            'remark' => $remark,
+            //'admin_id' => request()->adminId() ?? 0,
+            'audit_time' => date('Y-m-d H:i:s')
+        ]);
+    }
+
 }

@@ -29,6 +29,14 @@ Route::group(function () {
         Route::get('detail/:id', '/detail')->name('systemOrderDetail')->option([
             '_alias' => '详情',
         ]);
+        Route::get('status/:id/form', '/switchStatusForm')->name('systemOrderSwitchStatusForm')->option([
+            '_alias' => '审核表单',
+            '_auth' => false,
+            '_form' => 'systemOrderSwitchStatus',
+        ]);
+        Route::post('status/:id', '/switchStatus')->name('systemOrderSwitchStatus')->option([
+            '_alias' => '审核',
+        ]);
         Route::get('export', '/export')->name('systemOrderExport')->option([
             '_alias' => '导出',
         ]);

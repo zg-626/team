@@ -435,7 +435,7 @@ class StoreOrderOfflineRepository extends BaseRepository
             'pay_type'   =>  $params['pay_type'],
             'commission_rate'=>$commission_rate,
             'handling_fee' => $handling_fee,
-            'status'     => 1,
+            'status'     => 0,
             'mer_id'     => $mer_id,
             'give_integral' => $total_give_integral,
             'other'     => 0,
@@ -835,6 +835,7 @@ class StoreOrderOfflineRepository extends BaseRepository
     {
         $res=$order;
         $res->paid = 1;
+        $res->is_del = 0;
         $res->is_share = 2;
         $res->pay_time = date('y_m-d H:i:s', time());
         $res->save();
