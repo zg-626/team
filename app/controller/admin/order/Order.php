@@ -236,7 +236,7 @@ class Order extends BaseController
         }
 
         // 检查是否为线下支付订单
-        if ($order->pay_type !== 'offline') {
+        if ($order->pay_type !== 7) {
             throw new ValidateException('非线下支付订单，无需审核');
         }
 
@@ -258,13 +258,10 @@ class Order extends BaseController
             // 支付凭证
             Elm::frameImage('payment_voucher', '支付凭证：', '/' . config('admin.admin_prefix') . '/setting/uploadPicture?field=payment_voucher&type=1')
                 ->value($order->payment_voucher ?? '')
-                ->disabled(true)
                 ->modal(['modal' => false])
                 ->icon('el-icon-camera')
                 ->width('1000px')
                 ->height('600px'),
-            // 当前审核状态显示
-            Elm::input('current_status', '当前状态：')->value($this->getAuditStatusText($order->offline_audit_status))->disabled(true),
             Elm::radio('status', '审核状态：', 1)->options(
                 [['value' => -1, 'label' => '拒绝'], ['value' => 1, 'label' => '通过']])
                 ->control([
@@ -292,7 +289,7 @@ class Order extends BaseController
         }
 
         // 检查是否为线下支付订单
-        if ($order->pay_type !== 'offline') {
+        if ($order->pay_type !== 7) {
             return app('json')->fail('非线下支付订单，无需审核');
         }
 
@@ -315,6 +312,7 @@ class Order extends BaseController
                 // 审核通过，更新审核状态
                 $this->repository->update($order->order_id, [
                     'offline_audit_status' => 1,
+                    'is_del'=>0,
                     'fail_msg' => ''
                 ]);
 
@@ -331,33 +329,25 @@ class Order extends BaseController
                 ];
 
                 // 调用支付成功方法
-                $result = $this->repository->paySuccess($paySuccessData);
-
-                if ($result) {
-                    // 记录审核日志
-                    $this->recordAuditLog($order, 1, '平台审核通过');
-                    return app('json')->success('审核通过，订单支付成功');
-                } else {
-                    // 如果支付成功失败，回滚审核状态
-                    $this->repository->update($order->order_id, [
-                        'offline_audit_status' => 0
-                    ]);
-                    return app('json')->fail('审核处理失败');
-                }
-            } else {
-                // 审核拒绝，更新订单状态和审核状态
-                $updateData = [
-                    'offline_audit_status' => -1,
-                    'status' => -1,
-                    'fail_msg' => $data['fail_msg'] ?? '审核拒绝'
-                ];
-                
-                $this->repository->update($order->order_id, $updateData);
-                
+                $this->repository->paySuccess($paySuccessData);
                 // 记录审核日志
-                $this->recordAuditLog($order, -1, $data['fail_msg'] ?? '平台审核拒绝');
-                return app('json')->success('审核已拒绝');
+                $this->recordAuditLog($order, 1, '平台审核通过');
+                return app('json')->success('审核通过，订单支付成功');
+
             }
+
+            // 审核拒绝，更新订单状态和审核状态
+            $updateData = [
+                'offline_audit_status' => -1,
+                'status' => -1,
+                'fail_msg' => $data['fail_msg'] ?? '审核拒绝'
+            ];
+
+            $this->repository->update($order->order_id, $updateData);
+
+            // 记录审核日志
+            $this->recordAuditLog($order, -1, $data['fail_msg'] ?? '平台审核拒绝');
+            return app('json')->success('审核已拒绝');
         } catch (\Exception $e) {
             return app('json')->fail('审核处理异常：' . $e->getMessage());
         }
