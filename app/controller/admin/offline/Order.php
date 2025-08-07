@@ -126,7 +126,7 @@ class Order extends BaseController
                     Elm::textarea('fail_msg', '拒绝原因：', '信息有误,请完善')->placeholder('请输入拒绝理由')->required()
                 ]]
             ]),
-        ])->setTitle('提现审核');
+        ])->setTitle('线下订单审核');
 
         return app('json')->success(formToData($arr));
     }
@@ -138,7 +138,7 @@ class Order extends BaseController
      */
     public function switchStatus($id)
     {
-        $data = $this->request->params(['status', 'remark']);
+        $data = $this->request->params(['status', 'fail_msg']);
 
         $order = $this->repository->getOne($id, null);
         if (!$order) {
