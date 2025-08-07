@@ -13,6 +13,7 @@
 
 namespace app\controller\admin\order;
 
+use app\common\repositories\store\order\StoreGroupOrderRepository;
 use crmeb\basic\BaseController;
 use app\common\repositories\store\ExcelRepository;
 use app\common\repositories\system\merchant\MerchantRepository;
@@ -317,19 +318,20 @@ class Order extends BaseController
                 ]);
 
                 // 触发支付成功回调
-                $paySuccessData = [
-                    'order_sn' => $order->order_sn,
-                    'data' => [
-                        'acc_trade_no' => 'OFFLINE_APPROVE_' . time(),
-                        'log_no' => 'LOG_' . time(),
-                        'trade_no' => 'TRADE_' . time(),
-                        'trade_time' => date('Y-m-d H:i:s'),
-                        'remark' => 'offline_payment_approved'
-                    ]
-                ];
+                /** @var StoreGroupOrderRepository $groupOrderRepository */
+                $groupOrderRepository = app()->make(StoreGroupOrderRepository::class);
+                $groupOrder = $groupOrderRepository->get($order->group_order_id);
+                
+                if (!$groupOrder) {
+                    // 回滚审核状态
+                    $this->repository->update($order->order_id, [
+                        'offline_audit_status' => 0
+                    ]);
+                    return app('json')->fail('未找到对应的主订单，审核失败');
+                }
 
                 // 调用支付成功方法
-                $this->repository->paySuccess($paySuccessData);
+                $this->repository->paySuccess($groupOrder);
                 // 记录审核日志
                 $this->recordAuditLog($order, 1, '平台审核通过');
                 return app('json')->success('审核通过，订单支付成功');
