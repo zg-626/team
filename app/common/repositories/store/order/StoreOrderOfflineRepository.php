@@ -447,6 +447,7 @@ class StoreOrderOfflineRepository extends BaseRepository
             'total_price' => $total_price,
             'deduction' => $params['user_deduction']?: 0,
             'deduction_money' => $params['user_deduction']?: 0,
+            'payment_voucher' => $params['payment_voucher']??'',
             'city' => $city,
             'city_id' => $city_id,
             'province' => $province,
@@ -461,7 +462,10 @@ class StoreOrderOfflineRepository extends BaseRepository
             /** @var StoreOrderOfflineRepository $storeOrderOfflineRepository */
             $storeOrderOfflineRepository = app()->make(__CLASS__);
             $order = $storeOrderOfflineRepository->getWhere(['order_id' => [$info->order_id]]);
-            $storeOrderOfflineRepository->computeds($order);
+            if($params['pay_type']==='manual'){
+                $storeOrderOfflineRepository->computeds($order);
+            }
+
             return app('json')->status($type,['order_id' => $info->order_id]);
         }
 
@@ -658,8 +662,8 @@ class StoreOrderOfflineRepository extends BaseRepository
 
             // 所有身份赠送佣金
             /** @var StoreOrderRepository $storeOrderRepository */
-            $storeOrderRepository = app()->make(StoreOrderRepository::class);
-            $storeOrderRepository->addCommission($order->mer_id,$order);
+            //$storeOrderRepository = app()->make(StoreOrderRepository::class);
+            //$storeOrderRepository->addCommission($order->mer_id,$order);
 
             // 发放推广抵用券
             $this->computed($order,$user);

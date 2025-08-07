@@ -33,6 +33,32 @@ class StoreOrderOffline extends BaseController
     /**
      * TODO 生成线下支付订单
      * @param $money
+     * @param int $mer_id
+     * @param StoreOrderOfflineRepository $storeOrderOfflineRepository
+     * @author esc
+     * @day 2025/03/07
+     */
+    public function enter($money, StoreOrderOfflineRepository $storeOrderOfflineRepository, int $mer_id=556)
+    {
+        $params = $this->request->params(['uid','user_deduction','payment_voucher',['commission_rate','pay_type',0]]);
+        if ($money<0)
+            return app('json')->fail('金额不能小于0');
+        if(!$mer_id)
+            return app('json')->fail('缺少商户id');
+        if(!$params['payment_voucher'])
+            return app('json')->fail('支付凭证不能为空');
+        $params['is_app'] = $this->request->isApp();
+        $params['pay_type'] = 'weixin';
+        $params['to_uid'] = 0;
+        if($params['uid']==0){
+            $params['uid'] = $this->request->userInfo()->uid;
+        }
+        return $storeOrderOfflineRepository->enter($money,$mer_id,$params);
+    }
+
+    /**
+     * TODO 生成线下支付订单
+     * @param $money
      * @param $mer_id
      * @param StoreOrderOfflineRepository $storeOrderOfflineRepository
      * @return Json|void

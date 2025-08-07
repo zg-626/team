@@ -84,6 +84,7 @@ Route::group('api/', function () {
             Route::get('/offline/list', 'Offline/getList');
             Route::get('/offline/detail/:id', 'Offline/detail');
             Route::post('/offline/check', 'Offline/v2CheckOrder');
+            Route::any('/offline/enter', 'Offline/enter');
         })->prefix('api.store.order.StoreOrder');
 
         // 预售
