@@ -16,7 +16,10 @@ namespace app\controller\admin\offline;
 use app\common\repositories\store\order\StoreOrderOfflineRepository;
 use crmeb\basic\BaseController;
 use crmeb\services\ExcelService;
+use FormBuilder\Factory\Elm;
 use think\App;
+use think\exception\ValidateException;
+use think\facade\Route;
 
 /**
  * 线下订单
@@ -100,40 +103,32 @@ class Order extends BaseController
     {
         $order = $this->repository->getOne($id, null);
         if (!$order) {
-            return app('json')->fail('订单不存在');
+            throw new ValidateException('数据不存在');
         }
         
         if ($order->paid == 1) {
-            return app('json')->fail('订单已支付，无需审核');
+            throw new ValidateException('订单已支付，无需审核');
         }
-        
-        $form = [
-            [
-                'type' => 'radio',
-                'field' => 'status',
-                'title' => '审核状态',
-                'value' => 1,
-                'options' => [
-                    ['label' => '通过审核（触发支付成功）', 'value' => 1],
-                    ['label' => '拒绝审核', 'value' => 0]
-                ],
-                'props' => [
-                    'type' => 'button'
-                ]
-            ],
-            /*[
-                'type' => 'input',
-                'field' => 'remark',
-                'title' => '审核备注',
-                'value' => '',
-                'props' => [
-                    'type' => 'textarea',
-                    'placeholder' => '请输入审核备注（可选）'
-                ]
-            ]*/
-        ];
-        
-        return app('json')->success(compact('form'));
+        $arr=Elm::createForm(Route::buildUrl('systemOrderSwitchStatus', compact('id'))->build(), [
+            // 订单价格
+            Elm::input('pay_price', '订单价格：')->value($order->pay_price)->disabled(true),
+            // 支付凭证
+            Elm::frameImage('payment_voucher', '支付凭证：', '/' . config('admin.admin_prefix') . '/setting/uploadPicture?field=payment_voucher&type=1')
+                ->value($order->payment_voucher ?? '')
+                ->modal(['modal' => false])
+                ->icon('el-icon-camera')
+                ->width('1000px')
+                ->height('600px'),
+            Elm::radio('status', '审核状态：', 1)->options(
+                [['value' => -1, 'label' => '拒绝'], ['value' => 1, 'label' => '通过']])
+                ->control([
+                ['value' => -1, 'rule' => [
+                    Elm::textarea('fail_msg', '拒绝原因：', '信息有误,请完善')->placeholder('请输入拒绝理由')->required()
+                ]]
+            ]),
+        ])->setTitle('提现审核');
+
+        return app('json')->success(formToData($arr));
     }
 
     /**
@@ -144,16 +139,16 @@ class Order extends BaseController
     public function switchStatus($id)
     {
         $data = $this->request->params(['status', 'remark']);
-        
+
         $order = $this->repository->getOne($id, null);
         if (!$order) {
             return app('json')->fail('订单不存在');
         }
-        
+
         if ($order->paid == 1) {
             return app('json')->fail('订单已支付，无需审核');
         }
-        
+
         try {
             if ($data['status'] == 1) {
                 // 审核通过，触发支付成功回调
@@ -167,7 +162,7 @@ class Order extends BaseController
                         'remark' => 'offline_order'
                     ]
                 ];*/
-                
+
                 // 调用支付成功方法
                 //$result = $this->repository->paySuccess($paySuccessData);
                 $result = $this->repository->computeds($order);
