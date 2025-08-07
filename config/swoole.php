@@ -17,7 +17,7 @@ use think\swoole\websocket\socketio\Parser;
 return [
     'server'     => [
         'host'      => env('SWOOLE_HOST', '0.0.0.0'), // 监听地址
-        'port'      => env('SWOOLE_PORT', 8334), // 监听端口
+        'port'      => env('SWOOLE_PORT', 8336), // 监听端口
         'mode'      => SWOOLE_PROCESS, // 运行模式 默认为SWOOLE_PROCESS
         'sock_type' => SWOOLE_SOCK_TCP, // sock type 默认为SWOOLE_SOCK_TCP
         'options'   => [
