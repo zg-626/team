@@ -17,7 +17,7 @@ return [
         
         // 默认初始阈值金额（首次补贴的目标值）
 
-        'default_initial_threshold' => 1000.00,
+        'default_initial_threshold' => 5000.00,
     ],
     
     // 补贴分配配置
