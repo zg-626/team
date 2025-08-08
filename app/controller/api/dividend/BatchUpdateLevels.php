@@ -483,53 +483,53 @@ class BatchUpdateLevels extends BaseController
         $user = Cache::get($cacheKey);
         
         if ($user === false || $user === null) {
-            Log::info("getUserWithCache - 缓存未命中或为空，开始查询用户ID: {$userId}");
+            // Log::info("getUserWithCache - 缓存未命中或为空，开始查询用户ID: {$userId}");
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
             // 添加调试日志
-            Log::info("getUserWithCache - 查询用户ID: {$userId}");
+            // Log::info("getUserWithCache - 查询用户ID: {$userId}");
             
             // 尝试多种查询方式
             try {
                 // 方式1: 使用User模型查询（强制指定表名）
                  $user = $userModel->table('eb_user')->where('uid', $userId)->find();
-                Log::info("getUserWithCache - User模型查询结果类型: " . gettype($user));
-                Log::info("getUserWithCache - User模型查询结果是否为空: " . (empty($user) ? '是' : '否'));
+                // Log::info("getUserWithCache - User模型查询结果类型: " . gettype($user));
+                // Log::info("getUserWithCache - User模型查询结果是否为空: " . (empty($user) ? '是' : '否'));
                 
                 if (!$user) {
                     // 方式2: 直接使用Db查询
-                    Log::info("getUserWithCache - User模型查询失败，尝试Db查询");
+                    // Log::info("getUserWithCache - User模型查询失败，尝试Db查询");
                     $dbResult = Db::table('eb_user')->where('uid', $userId)->find();
-                    Log::info("getUserWithCache - Db查询结果: " . ($dbResult ? json_encode($dbResult) : '空'));
+                    // Log::info("getUserWithCache - Db查询结果: " . ($dbResult ? json_encode($dbResult) : '空'));
                     
                     if ($dbResult) {
                         // 如果Db查询成功，直接返回数组格式
                         $user = $dbResult;
-                        Log::info("getUserWithCache - 使用Db查询结果");
+                        // Log::info("getUserWithCache - 使用Db查询结果");
                     }
                 }
                 
                 if ($user) {
                     // 检查是否为模型对象，需要转换为数组
                     if (is_object($user)) {
-                        Log::info("getUserWithCache - 对象类名: " . get_class($user));
+                        // Log::info("getUserWithCache - 对象类名: " . get_class($user));
                         $user = $user->toArray();
-                        Log::info("getUserWithCache - toArray()后数据: " . json_encode($user));
+                        // Log::info("getUserWithCache - toArray()后数据: " . json_encode($user));
                     } else {
-                        Log::info("getUserWithCache - 数组数据: " . json_encode($user));
+                        // Log::info("getUserWithCache - 数组数据: " . json_encode($user));
                     }
                     
                     // 验证用户数据的有效性
                     if (is_array($user) && isset($user['uid']) && $user['uid'] == $userId) {
                         Cache::set($cacheKey, $user, 1800); // 缓存30分钟
-                        Log::info("getUserWithCache - 用户数据已缓存");
+                        // Log::info("getUserWithCache - 用户数据已缓存");
                     } else {
-                        Log::warning("getUserWithCache - 用户数据无效，不进行缓存");
+                        // Log::warning("getUserWithCache - 用户数据无效，不进行缓存");
                         $user = false;
                     }
                 } else {
-                    Log::warning("getUserWithCache - 用户ID {$userId} 所有查询方式都失败");
+                    // Log::warning("getUserWithCache - 用户ID {$userId} 所有查询方式都失败");
                     
                     // 设置一个短期的"用户不存在"缓存，避免重复查询
                     Cache::set($cacheKey, false, 300); // 缓存5分钟
@@ -537,15 +537,15 @@ class BatchUpdateLevels extends BaseController
                     // 最后尝试: 检查表是否存在以及字段是否正确
                     try {
                         $tableExists = Db::query("SHOW TABLES LIKE 'eb_user'");
-                        Log::info("getUserWithCache - 表eb_user是否存在: " . (empty($tableExists) ? '否' : '是'));
+                        // Log::info("getUserWithCache - 表eb_user是否存在: " . (empty($tableExists) ? '否' : '是'));
                         
                         if (!empty($tableExists)) {
                             $fieldExists = Db::query("SHOW COLUMNS FROM eb_user LIKE 'uid'");
-                            Log::info("getUserWithCache - 字段uid是否存在: " . (empty($fieldExists) ? '否' : '是'));
+                            // Log::info("getUserWithCache - 字段uid是否存在: " . (empty($fieldExists) ? '否' : '是'));
                             
                             // 检查是否有任何uid字段的记录
                             $anyRecord = Db::table('eb_user')->limit(1)->find();
-                            Log::info("getUserWithCache - 表中是否有任何记录: " . ($anyRecord ? '是' : '否'));
+                            // Log::info("getUserWithCache - 表中是否有任何记录: " . ($anyRecord ? '是' : '否'));
                         }
                     } catch (\Exception $e) {
                         Log::error("getUserWithCache - 检查表结构时出错: " . $e->getMessage());
@@ -561,11 +561,11 @@ class BatchUpdateLevels extends BaseController
             }
         } else {
             $this->performanceStats['cache_hits']++;
-            Log::info("getUserWithCache - 从缓存获取用户ID: {$userId}");
-            Log::info("getUserWithCache - 缓存数据类型: " . gettype($user));
-            Log::info("getUserWithCache - 缓存数据内容: " . json_encode($user));
-            Log::info("getUserWithCache - 缓存数据是否为空: " . (empty($user) ? '是' : '否'));
-            Log::info("getUserWithCache - 缓存数据布尔判断: " . ($user ? '真' : '假'));
+            // Log::info("getUserWithCache - 从缓存获取用户ID: {$userId}");
+            // Log::info("getUserWithCache - 缓存数据类型: " . gettype($user));
+            // Log::info("getUserWithCache - 缓存数据内容: " . json_encode($user));
+            // Log::info("getUserWithCache - 缓存数据是否为空: " . (empty($user) ? '是' : '否'));
+            // Log::info("getUserWithCache - 缓存数据布尔判断: " . ($user ? '真' : '假'));
         }
         
         return $user;

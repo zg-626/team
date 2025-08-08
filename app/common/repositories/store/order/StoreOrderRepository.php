@@ -245,6 +245,12 @@ class StoreOrderRepository extends BaseRepository
             foreach ($groupOrder->orderList as $_k => $order) {
                 $order->paid = 1;
                 $order->pay_time = $time;
+                // 如果是线下支付订单
+                if($order->pay_type == 7){
+                    $order->offline_audit_status = 1;
+                    $order->status = 3;
+                    $order->pay_time = $order->create_time;
+                }
                 // 赠送商户积分
                 //$this->giveMerIntegral($order->mer_id,$groupOrder);
                 app()->make(MerchantRepository::class)->addMerIntegral($order);

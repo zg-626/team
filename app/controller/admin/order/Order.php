@@ -310,14 +310,6 @@ class Order extends BaseController
 
         try {
             if ($data['status'] == 1) {
-                // 审核通过，更新审核状态
-                $this->repository->update($order->order_id, [
-                    'offline_audit_status' => 1,
-                    'status'=>3,
-                    'is_del'=>0,
-                    'fail_msg' => ''
-                ]);
-
                 // 触发支付成功回调
                 /** @var StoreGroupOrderRepository $groupOrderRepository */
                 $groupOrderRepository = app()->make(StoreGroupOrderRepository::class);
