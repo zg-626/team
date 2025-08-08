@@ -170,18 +170,21 @@ class ThresholdDividendService
     private function logPoolChange($poolId, $amount, $orderData)
     {
         try {
+            // 确保 city 字段是有效的 UTF-8 编码
+            $city = isset($orderData['city']) ? mb_convert_encoding($orderData['city'], 'UTF-8', 'UTF-8') : '';
+            
             Db::name('dividend_pool_log')->insert([
-                'pool_id' => $poolId,
                 'order_id' => $orderData['order_id'] ?? 0,
                 'mer_id' => $orderData['mer_id'] ?? 0,
                 'uid' => $orderData['uid'] ?? 0,
-                'change_amount' => $amount,
-                'change_type' => 1, // 1=增加，2=减少
+                'pm' => 1, // 1=获得，0=支出
+                'amount' => $amount,
                 'handling_fee' => $orderData['handling_fee'] ?? 0,
                 'city_id' => $orderData['city_id'] ?? 0,
-                'city' => $orderData['city'] ?? '',
+                'city' => $city,
                 'remark' => '订单手续费40%累积',
-                'create_time' => date('Y-m-d H:i:s')
+                'create_time' => date('Y-m-d H:i:s'),
+                'status' => 1
             ]);
         } catch (\Exception $e) {
             Log::error('记录分红池变动日志失败: ' . $e->getMessage());
@@ -255,9 +258,8 @@ class ThresholdDividendService
     private function triggerAsyncThresholdDividend($pool)
     {
         try {
-            // 这里可以使用队列或者其他异步方式
-            // 为了简化，直接调用补贴控制器
-            $thresholdDividends = new \app\controller\api\dividend\ThresholdDividends();
+            // 使用服务容器正确实例化控制器
+            $thresholdDividends = app()->make(\app\controller\api\dividend\ThresholdDividends::class);
             
             // 直接调用公共方法
             $result = $thresholdDividends->processPoolThreshold($pool);

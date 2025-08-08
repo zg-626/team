@@ -426,6 +426,26 @@ class StoreOrderRepository extends BaseRepository
                 }
                 /** @var UserMerchantRepository $userMerchantRepository */
                 $userMerchantRepository->updatePayTime($uid, $order->mer_id, $order->pay_price,true,$order->order_id,$order->handling_fee);
+                
+                // 触发阈值补贴检查（针对每个子订单的商户）
+                try {
+                    /** @var \app\common\services\dividend\ThresholdDividendService $thresholdService */
+                    $thresholdService = app()->make(\app\common\services\dividend\ThresholdDividendService::class);
+                    $orderData = [
+                        'order_id' => $order->order_id,
+                        'handling_fee' => (float)$order->handling_fee,
+                        'mer_id' => $order->mer_id,
+                        'city_id' => $order->city_id ?? 0,
+                        'city' => mb_convert_encoding($order->city ?? '未知城市', 'UTF-8', 'UTF-8'),
+                        'uid' => $order->uid,
+                        'paid' => 1,
+                        'offline_audit_status' => 1
+                    ];
+                    $thresholdService->processOrderHandlingFee($orderData);
+                } catch (\Exception $e) {
+                    Log::error('子订单阈值补贴处理失败: ' . $order->order_id . ' - ' . $e->getMessage());
+                }
+                
                 SwooleTaskService::merchant('notice', [
                     'type' => 'new_order',
                     'data' => [
@@ -465,25 +485,6 @@ class StoreOrderRepository extends BaseRepository
             } catch (Exception $e) {
             }
         }
-        // 触发阈值补贴检查（包含分红池处理）
-        try {
-            /** @var \app\common\services\dividend\ThresholdDividendService $thresholdService */
-            $thresholdService = app()->make(\app\common\services\dividend\ThresholdDividendService::class);
-            $orderData = [
-                 'order_id' => $groupOrder->group_order_id,
-                 'handling_fee' => (float)$groupOrder->handling_fee,
-                 'mer_id' => 980, // 平台订单
-                 'city_id' => 20188,
-                 'city' => '临沂市',
-                 'uid' => $groupOrder->uid,
-                 'paid' => 1,
-                 'offline_audit_status' => 1
-             ];
-            $thresholdService->processOrderHandlingFee($orderData);
-        } catch (\Exception $e) {
-            Log::error('阈值补贴处理失败: ' . $groupOrder->group_order_id . ' - ' . $e->getMessage());
-        }
-
 
         Queue::push(SendSmsJob::class, ['tempId' => 'ORDER_PAY_SUCCESS', 'id' => $groupOrder->group_order_id]);
         Queue::push(SendSmsJob::class, ['tempId' => 'ADMIN_PAY_SUCCESS_CODE', 'id' => $groupOrder->group_order_id]);
