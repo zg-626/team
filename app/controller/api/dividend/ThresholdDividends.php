@@ -10,6 +10,7 @@ use app\common\model\user\User as UserModer;
 use app\common\model\system\DividendStatistics;
 use app\common\model\system\UserDividendRecord;
 use app\common\model\user\User;
+use app\common\repositories\user\UserBillRepository;
 use think\console\Input;
 use think\console\Output;
 use think\facade\Db;
@@ -394,8 +395,8 @@ class ThresholdDividends extends BaseController
         foreach ($teamLeaders as $leader) {
             $leaderDividend = round($dividendPerLeader, 2);
             
-            // 更新用户的brokerage_price字段
-            $this->updateUserBrokeragePrice($leader['phone'], $leaderDividend, $userDianModel);
+            // 更新用户的coupon_amount字段
+            $this->updateUserCouponAmount($leader['phone'], $leaderDividend, $userDianModel);
             
             $teamLeaderResults[] = [
                 'uid' => $leader['uid'],
@@ -448,20 +449,31 @@ class ThresholdDividends extends BaseController
     }
     
     /**
-     * 更新用户的brokerage_price字段
+     * 更新用户的coupon_amount字段
      */
-    private function updateUserBrokeragePrice($phone, $dividendAmount, $userModel)
+    private function updateUserCouponAmount($phone, $dividendAmount, $userModel)
     {
         try {
             $user = $userModel->where('phone', $phone)->find();
             if ($user) {
-                $newBrokeragePrice = $user['brokerage_price'] + $dividendAmount;
+                $newCouponAmount = $user['coupon_amount'] + $dividendAmount;
                 $userModel->where('uid', $user['uid'])->update([
-                    'brokerage_price' => $newBrokeragePrice
+                    'coupon_amount' => $newCouponAmount
+                ]);
+                
+                // 用户抵用券记录
+                $userBillRepository = app()->make(UserBillRepository::class);
+                $userBillRepository->incBill($user['uid'], 'coupon_amount', 'exchange', [
+                    'link_id' => 0,
+                    'status' => 1,
+                    'title' => '获得阈值分红抵用券',
+                    'number' => $dividendAmount,
+                    'mark' => '阈值分红获得抵用券' . (float)$dividendAmount,
+                    'balance' => $newCouponAmount
                 ]);
             }
         } catch (\Exception $e) {
-            Log::error("更新用户补贴失败 - 手机号: {$phone}, 金额: {$dividendAmount}.错误信息:{$e->getMessage()}");
+            Log::error("更新用户抵用券失败 - 手机号: {$phone}, 金额: {$dividendAmount}.错误信息:{$e->getMessage()}");
         }
     }
     
@@ -495,7 +507,7 @@ class ThresholdDividends extends BaseController
             
             $dividendAmount = round($dividendAmount, 2);
             
-            $this->updateUserBrokeragePrice($user['phone'], $dividendAmount, $userModel);
+            $this->updateUserCouponAmount($user['phone'], $dividendAmount, $userModel);
             
             $results[] = [
                 'uid' => $user['uid'],
