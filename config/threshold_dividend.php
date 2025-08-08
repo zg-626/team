@@ -16,6 +16,7 @@ return [
         'initial_trigger_rate' => 1.15,
         
         // 默认初始阈值金额（首次补贴的目标值）
+
         'default_initial_threshold' => 1000.00,
     ],
     
