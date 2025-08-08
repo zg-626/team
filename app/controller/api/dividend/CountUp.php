@@ -5,7 +5,7 @@
 
 namespace app\controller\api\dividend;
 
-use app\common\model\store\order\StoreOrderOffline;
+use app\common\model\store\order\StoreOrder;
 use app\common\model\user\User as UserModer;
 use think\console\Command;
 use think\console\Input;
@@ -52,12 +52,12 @@ class CountUp extends BaseController
             Log::info("级别统计任务 - 统计日期: {$yesterday}");
             
             $userModel = new UserModer();
-            $orderModel = new StoreOrderOffline();
+            $orderModel = new StoreOrder();
             
-            // 统计昨天商家556的订单数据
+            // 统计昨天商家980的订单数据
             $totalStats = $orderModel
                 ->where('paid', 1)
-                ->where('mer_id', 556)
+                ->where('mer_id', 980)
                 ->where('pay_time', 'between', [$yesterdayStart, $yesterdayEnd])
                 ->field('count(*) as order_count, sum(pay_price) as total_turnover, sum(handling_fee) as total_handling_fee')
                 ->find();
@@ -66,15 +66,15 @@ class CountUp extends BaseController
             $totalTurnover = $totalStats['total_turnover'] ?? 0;
             $totalHandlingFee = $totalStats['total_handling_fee'] ?? 0;
             
-            Log::info("商家556昨天订单统计:");
+            Log::info("商家980昨天订单统计:");
             Log::info("- 订单数量: {$orderCount}");
             Log::info("- 总流水: {$totalTurnover}");
             Log::info("- 总手续费: {$totalHandlingFee}");
             
-            // 获取在商家556消费过的用户ID
+            // 获取在商家980消费过的用户ID
             $consumerUserIds = $orderModel
                 ->where('paid', 1)
-                ->where('mer_id', 556)
+                ->where('mer_id', 980)
                 ->distinct(true)
                 ->column('uid');
             
@@ -104,7 +104,7 @@ class CountUp extends BaseController
                 $levelCounts['v' . $level] = $count;
             }
             
-            Log::info("在商家556消费过的用户级别统计:");
+            Log::info("在商家980消费过的用户级别统计:");
             $totalConsumers = count($consumerUserIds);
             Log::info("- 总消费用户数: {$totalConsumers}人");
             foreach ($levelCounts as $level => $count) {

@@ -56,20 +56,20 @@ class DistributeDividends extends BaseController
             
             Log::info("补贴日期: {$yesterday}");
             
-            // 统计昨天商家556订单的handling_fee总额
+            // 统计昨天商家980订单的handling_fee总额
             $totalHandlingFee = $orderModel
                 ->where('paid', 1)
-                ->where('mer_id', 556)
+                ->where('mer_id', 980)
                 ->where('pay_time', 'between', [$yesterdayStart, $yesterdayEnd])
                 ->sum('handling_fee');
             
             if ($totalHandlingFee <= 0) {
-                Log::info('商家556昨天没有handling_fee可分配');
-                Log::info('补贴任务完成 - 无可分配金额', ['date' => $yesterday, 'total_handling_fee' => 0, 'mer_id' => 556]);
+                Log::info('商家980昨天没有handling_fee可分配');
+                Log::info('补贴任务完成 - 无可分配金额', ['date' => $yesterday, 'total_handling_fee' => 0, 'mer_id' => 980]);
                 return 0;
             }
             
-            Log::info("商家556昨天总手续费: {$totalHandlingFee}");
+            Log::info("商家980昨天总手续费: {$totalHandlingFee}");
             
             // 获取所有团长（V1及以上级别的用户）
             $teamLeaders = $userDianModel
@@ -148,7 +148,7 @@ class DistributeDividends extends BaseController
                 $dividendStatisticsModel,
                 $userDividendRecordModel,
                 $yesterday,
-                556, // 商户ID
+                980, // 商户ID
                 $totalHandlingFee,
                 $teamLeaderPool,
                 $integralPool,

@@ -71,11 +71,11 @@ class BatchUpdateLevels extends BaseController
             
             Log::info("开始批量更新用户级别...");
             
-            // 获取在商家556消费过的用户ID（使用缓存优化）
+            // 获取在商家980消费过的用户ID（使用缓存优化）
             $consumerUserIds = $this->getConsumerUserIds($orderModel, $forceUpdate);
             
             if (empty($consumerUserIds)) {
-                Log::info('商家556没有消费用户，任务结束。');
+                Log::info('商家980没有消费用户，任务结束。');
                 return 0;
             }
             
@@ -138,7 +138,7 @@ class BatchUpdateLevels extends BaseController
         
         $consumerUserIds = Db::name('store_order_offline')
             ->where('paid', 1)
-            ->where('mer_id', 556)
+            ->where('mer_id', 980)
             ->group('uid')
             ->select();
         
@@ -520,7 +520,7 @@ class BatchUpdateLevels extends BaseController
             $personalStats = $orderModel
                 ->where('uid', $userId)
                 ->where('paid', 1)
-                ->where('mer_id', 556)
+                ->where('mer_id', 980)
                 ->field('sum(pay_price) as personal_turnover')
                 ->find();
             
@@ -551,7 +551,7 @@ class BatchUpdateLevels extends BaseController
             $teamStats = $orderModel
                 ->whereIn('uid', $teamMemberIds)
                 ->where('paid', 1)
-                ->where('mer_id', 556)
+                ->where('mer_id', 980)
                 ->field('sum(pay_price) as team_turnover')
                 ->find();
             
