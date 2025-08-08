@@ -332,14 +332,14 @@ class PointsOrderCreateRepository
                 $user->coupon_amount = bcsub($user->coupon_amount, $groupOrder['integral'], 0);
                 $userBillRepository->decBill(
                     $user['uid'],
-                    'integral',
+                    'coupon_amount',
                     'points_order',
                     [
                         'link_id' => $groupOrder['group_order_id'],
                         'status' => 1,
-                        'title' => '积分商城兑换商品',
+                        'title' => '抵用券商城兑换商品',
                         'number' => $groupOrder['integral'],
-                        'mark' => '积分商城兑换商品使用积分' . floatval($groupOrder['integral']) ,
+                        'mark' => '抵用券商城兑换商品使用抵用券' . floatval($groupOrder['integral']) ,
                         'balance' => $user->coupon_amount
                     ]
                 );
