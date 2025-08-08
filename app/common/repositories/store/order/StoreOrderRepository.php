@@ -471,6 +471,8 @@ class StoreOrderRepository extends BaseRepository
             ]);
             // 赠送积分
             $this->giveIntegral($groupOrder,'线上');
+            // 赠送权益值
+            $this->giveEquityValue($groupOrder,'线上');
             // 代理赠送佣金 TODO  有bug需要修复
             //$this->addCommission($order->mer_id,$groupOrder);
             if (count($profitsharing)) {
@@ -1459,13 +1461,17 @@ class StoreOrderRepository extends BaseRepository
     public function giveIntegral($groupOrder,$type = '美团')
     {
         if ($groupOrder->give_integral > 0) {
+            $make = app()->make(UserRepository::class);
+            $user = $make->get($groupOrder->uid);
+            $user->integral += $groupOrder->give_integral;
+            $user->save();
             app()->make(UserBillRepository::class)->incBill($groupOrder->uid, 'integral', 'lock', [
                 'link_id' => $groupOrder['group_order_id'],
                 'status' => 0,
                 'title' => $type.'消费，用户增加积分',
                 'number' => $groupOrder->give_integral,
                 'mark' => '成功消费' . floatval($groupOrder['pay_price']) . '元,赠送积分' . floatval($groupOrder->give_integral),
-                'balance' => $groupOrder->user->integral
+                'balance' => $user->integral+$groupOrder->give_integral,
             ]);
         }
     }
@@ -1584,21 +1590,21 @@ class StoreOrderRepository extends BaseRepository
         
         // 给一级推广用户增加权益值（按订单金额的一定比例）
         if ($order->extension_one > 0 && $spreadUid) {
-            $equityValueRate = 0.05; // 5%的权益值奖励比例
-            $equityValue = bcmul($order->pay_price, $equityValueRate, 2);
+            $equityValueRate = 0.1; // 10%的权益值奖励比例(根据积分的百分比)
+            $equityValue = bcmul($order->give_integral, $equityValueRate, 2);
             if ($equityValue > 0) {
                 $userRepository->incEquityValue($spreadUid, $equityValue, $order->order_id, 
-                    $user['nickname'] . '成功消费' . floatval($order['pay_price']) . '元,奖励推广权益值' . floatval($equityValue));
+                    $user['nickname'] . '成功消费' . (float)$order['pay_price'] . '元,奖励推广权益值' . (float)$equityValue);
             }
         }
         
         // 给二级推广用户增加权益值（按订单金额的一定比例）
         if ($order->extension_two > 0 && $topUid) {
-            $equityValueRate = 0.03; // 3%的权益值奖励比例
-            $equityValue = bcmul($order->pay_price, $equityValueRate, 2);
+            $equityValueRate = 0.03; // 3%的权益值奖励比例(根据积分的百分比)
+            $equityValue = bcmul($order->give_integral, $equityValueRate, 2);
             if ($equityValue > 0) {
                 $userRepository->incEquityValue($topUid, $equityValue, $order->order_id, 
-                    $user['nickname'] . '成功消费' . floatval($order['pay_price']) . '元,奖励推广权益值' . floatval($equityValue));
+                    $user['nickname'] . '成功消费' . (float)$order['pay_price'] . '元,奖励推广权益值' . (float)$equityValue);
             }
         }
     }
@@ -3403,6 +3409,30 @@ class StoreOrderRepository extends BaseRepository
             return false;
         } else {
             return true;
+        }
+    }
+
+
+    /**
+     * 赠送权益值(根据积分的值)
+     * @param StoreGroupOrder $groupOrder
+     * @return void
+     */
+    private function giveEquityValue(StoreGroupOrder $groupOrder,$type = '美团')
+    {
+        if ($groupOrder->give_integral > 0) {
+            $make = app()->make(UserRepository::class);
+            $user = $make->get($groupOrder->uid);
+            $user->equity_value += $groupOrder->give_integral;
+            $user->save();
+            app()->make(UserBillRepository::class)->incBill($groupOrder->uid, 'equity_value', 'lock', [
+                'link_id' => $groupOrder['group_order_id'],
+                'status' => 0,
+                'title' => $type.'消费，用户增加权益值',
+                'number' => $groupOrder->give_integral,
+                'mark' => '成功消费' . (float)$groupOrder['pay_price'] . '元,赠送权益值' . (float)$groupOrder->give_integral,
+                'balance' => $user->equity_value+$groupOrder->give_integral,
+            ]);
         }
     }
 }
