@@ -5,7 +5,7 @@
 
 namespace app\controller\api\dividend;
 
-use app\common\model\store\order\StoreOrderOffline;
+use app\common\model\store\order\StoreOrder;
 use app\common\model\user\User as UserModer;
 use app\common\model\system\DividendStatistics;
 use app\common\model\system\UserDividendRecord;
@@ -45,7 +45,7 @@ class DistributeDividends extends BaseController
         
         try {
             $userDianModel = new UserModer();
-            $orderModel = new StoreOrderOffline();
+            $orderModel = new StoreOrder();
             $dividendStatisticsModel = new DividendStatistics();
             $userDividendRecordModel = new UserDividendRecord();
             
@@ -367,7 +367,7 @@ class DistributeDividends extends BaseController
             
             return [
                 'total_handling_fee' => $totalHandlingFee,
-                'dividend_date' => $yesterday,
+                'dividend_date' => $dividendDate,
                 'user_records_count' => count($userRecords),
                 'message' => '补贴数据保存成功'
             ];
