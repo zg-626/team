@@ -3,19 +3,20 @@
 // | 阈值补贴相关路由配置
 // +----------------------------------------------------------------------
 
+use app\common\middleware\AllowOriginMiddleware;
+use app\common\middleware\CheckSiteOpenMiddleware;
+use app\common\middleware\InstallMiddleware;
+use app\common\middleware\UserTokenMiddleware;
 use think\facade\Route;
 
 // 阈值补贴管理路由组
 Route::group('api/dividend/threshold', function () {
     
     // 手动执行阈值补贴
-    Route::post('execute', 'api.dividend.ThresholdDividends/execute');
+    Route::any('execute', 'api.dividend.ThresholdDividends/index');
     
-    // 获取分红池状态
-    Route::get('pools/status', 'api.dividend.ThresholdDividends/getPoolsStatus');
-    
-    // 获取单个分红池详情
-    Route::get('pool/:id/detail', 'api.dividend.ThresholdDividends/getPoolDetail');
+    // 处理单个分红池阈值
+    Route::post('pool/process', 'api.dividend.ThresholdDividends/processPoolThreshold');
     
     // 获取阈值补贴历史记录
     Route::get('history', 'api.dividend.ThresholdDividends/getHistory');
@@ -23,7 +24,10 @@ Route::group('api/dividend/threshold', function () {
     // 获取补贴统计数据
     Route::get('statistics', 'api.dividend.ThresholdDividends/getStatistics');
     
-})->middleware(['auth', 'admin']); // 需要管理员权限
+})->middleware(UserTokenMiddleware::class, true)
+    ->middleware(AllowOriginMiddleware::class)
+    ->middleware(InstallMiddleware::class)
+    ->middleware(CheckSiteOpenMiddleware::class); // 需要管理员权限
 
 // 定时任务路由组
 Route::group('api/dividend/cron', function () {
@@ -43,20 +47,25 @@ Route::group('api/dividend/cron', function () {
     // 获取执行统计
     Route::get('execution-stats', 'api.dividend.ThresholdCron/getExecutionStats');
     
-})->middleware(['cron_auth']); // 定时任务专用认证
+})->middleware(AllowOriginMiddleware::class)
+    ->middleware(InstallMiddleware::class)
+    ->middleware(CheckSiteOpenMiddleware::class); // 定时任务路由
 
 // 手动触发和测试路由组
 Route::group('api/dividend/manual', function () {
     
     // 手动触发阈值检查
-    Route::post('trigger-threshold', 'api.dividend.ThresholdDividends/execute')
-        ->middleware(['auth', 'admin']);
+    Route::post('trigger-threshold', 'api.dividend.ThresholdDividends/index')
+        ->middleware(UserTokenMiddleware::class, true);
     
     // 模拟订单支付（仅测试环境）
     Route::post('simulate-payment', 'api.dividend.ThresholdCron/simulatePayment')
-        ->middleware(['auth', 'admin', 'test_env']);
+        ->middleware(UserTokenMiddleware::class, true);
     
-})->middleware(['auth', 'admin']);
+})->middleware(UserTokenMiddleware::class, true)
+    ->middleware(AllowOriginMiddleware::class)
+    ->middleware(InstallMiddleware::class)
+    ->middleware(CheckSiteOpenMiddleware::class);
 
 // 公开接口（无需认证）
 Route::group('api/public/dividend', function () {
@@ -74,7 +83,7 @@ Route::group('webhook/dividend', function () {
     
     // 外部系统触发阈值检查
     Route::post('trigger', 'api.dividend.ThresholdCron/checkThresholds')
-        ->middleware(['webhook_auth']);
+        ->middleware(AllowOriginMiddleware::class);
     
     // 获取系统状态
     Route::get('status', 'api.dividend.ThresholdCron/healthCheck')
