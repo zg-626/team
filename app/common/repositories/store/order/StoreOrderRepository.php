@@ -214,8 +214,11 @@ class StoreOrderRepository extends BaseRepository
             // 终止执行
             return;
         }
+        // 初始化阈值补贴处理数据收集数组
+        $thresholdOrdersData = [];
+        
         //修改订单状态
-        Db::transaction(function () use ($subOrders, $is_combine, $groupOrder) {
+        Db::transaction(function () use ($subOrders, $is_combine, $groupOrder, &$thresholdOrdersData) {
             $time = date('Y-m-d H:i:s');
             $groupOrder->paid = 1;
             $groupOrder->pay_time = $time;
@@ -427,24 +430,17 @@ class StoreOrderRepository extends BaseRepository
                 /** @var UserMerchantRepository $userMerchantRepository */
                 $userMerchantRepository->updatePayTime($uid, $order->mer_id, $order->pay_price,true,$order->order_id,$order->handling_fee);
                 
-                // 触发阈值补贴检查（针对每个子订单的商户）
-                try {
-                    /** @var \app\common\services\dividend\ThresholdDividendService $thresholdService */
-                    $thresholdService = app()->make(\app\common\services\dividend\ThresholdDividendService::class);
-                    $orderData = [
-                        'order_id' => $order->order_id,
-                        'handling_fee' => (float)$order->handling_fee,
-                        'mer_id' => $order->mer_id,
-                        'city_id' => $order->city_id ?? 0,
-                        'city' => mb_convert_encoding($order->city ?? '未知城市', 'UTF-8', 'UTF-8'),
-                        'uid' => $order->uid,
-                        'paid' => 1,
-                        'offline_audit_status' => 1
-                    ];
-                    $thresholdService->processOrderHandlingFee($orderData);
-                } catch (\Exception $e) {
-                    Log::error('子订单阈值补贴处理失败: ' . $order->order_id . ' - ' . $e->getMessage());
-                }
+                // 收集阈值补贴处理数据（事务外异步处理）
+                $thresholdOrdersData[] = [
+                    'order_id' => $order->order_id,
+                    'handling_fee' => (float)$order->handling_fee,
+                    'mer_id' => $order->mer_id,
+                    'city_id' => $order->city_id ?? 0,
+                    'city' => mb_convert_encoding($order->city ?? '未知城市', 'UTF-8', 'UTF-8'),
+                    'uid' => $order->uid,
+                    'paid' => 1,
+                    'offline_audit_status' => 1
+                ];
                 
                 SwooleTaskService::merchant('notice', [
                     'type' => 'new_order',
@@ -479,6 +475,24 @@ class StoreOrderRepository extends BaseRepository
                 $groupOrder['give_coupon_ids'] = app()->make(StoreCouponRepository::class)->getGiveCoupon($groupOrder['give_coupon_ids'])->column('coupon_id');
             $groupOrder->save();
         });
+        
+        // 事务完成后，异步处理阈值补贴（避免嵌套事务导致的锁等待）
+        if (!empty($thresholdOrdersData)) {
+            try {
+                /** @var \app\common\services\dividend\ThresholdDividendService $thresholdService */
+                $thresholdService = app()->make(\app\common\services\dividend\ThresholdDividendService::class);
+                foreach ($thresholdOrdersData as $orderData) {
+                    try {
+                        $thresholdService->processOrderHandlingFee($orderData);
+                    } catch (\Exception $e) {
+                        Log::error('订单阈值补贴处理失败: ' . $orderData['order_id'] . ' - ' . $e->getMessage());
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('阈值补贴服务初始化失败: ' . $e->getMessage());
+            }
+        }
+        
         if (count($groupOrder['give_coupon_ids']) > 0) {
             try {
                 Queue::push(PayGiveCouponJob::class, ['ids' => $groupOrder['give_coupon_ids'], 'uid' => $groupOrder['uid']]);

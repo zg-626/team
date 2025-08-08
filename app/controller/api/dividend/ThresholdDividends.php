@@ -204,10 +204,46 @@ class ThresholdDividends extends BaseController
         // 计算下次阈值（增长15%）
         $nextThreshold = $currentThreshold * 1.15;
         
-        // 开启事务
+        // 开启事务（设置较短的锁等待超时）
         Db::startTrans();
         
         try {
+            // 设置当前会话的锁等待超时时间为10秒
+            Db::execute('SET innodb_lock_wait_timeout = 10');
+            
+            // 使用SELECT FOR UPDATE锁定分红池记录，避免并发修改
+            $currentPool = Db::name('dividend_pool')
+                ->where('id', $poolId)
+                ->lock(true)
+                ->find();
+                
+            if (!$currentPool) {
+                throw new \Exception('分红池记录不存在或已被删除');
+            }
+            
+            // 重新验证当前金额是否仍然满足阈值条件
+            $currentAmount = (float)$currentPool['available_amount'];
+            if ($currentAmount < $currentThreshold) {
+                Log::info("分红池 {$poolId} 当前金额不足，跳过补贴", [
+                    'current_amount' => $currentAmount,
+                    'required_threshold' => $currentThreshold
+                ]);
+                Db::rollback();
+                return [
+                    'log_id' => 0,
+                    'threshold_amount' => $currentThreshold,
+                    'amount_at_dividend' => $currentAmount,
+                    'base_amount' => $baseAmount ?? 0,
+                    'next_threshold' => $nextThreshold,
+                    'incremental_amount' => 0,
+                    'dividend_amount' => 0,
+                    'team_leader_count' => 0,
+                    'integral_user_count' => 0,
+                    'sequence' => $sequence,
+                    'skipped' => true,
+                    'reason' => '金额不足'
+                ];
+            }
             // 获取基础保留金额
             $baseAmount = isset($pool['base_amount']) ? $pool['base_amount'] : $pool['initial_threshold'];
             
@@ -275,6 +311,30 @@ class ThresholdDividends extends BaseController
             
         } catch (\Exception $e) {
             Db::rollback();
+            
+            // 特殊处理锁等待超时异常
+            if (strpos($e->getMessage(), 'Lock wait timeout exceeded') !== false) {
+                Log::warning("分红池 {$poolId} 补贴处理遇到锁等待超时，稍后重试", [
+                    'sequence' => $sequence,
+                    'threshold' => $currentThreshold
+                ]);
+                
+                return [
+                    'log_id' => 0,
+                    'threshold_amount' => $currentThreshold,
+                    'amount_at_dividend' => 0,
+                    'base_amount' => $baseAmount ?? 0,
+                    'next_threshold' => $nextThreshold,
+                    'incremental_amount' => 0,
+                    'dividend_amount' => 0,
+                    'team_leader_count' => 0,
+                    'integral_user_count' => 0,
+                    'sequence' => $sequence,
+                    'skipped' => true,
+                    'reason' => '锁等待超时，稍后重试'
+                ];
+            }
+            
             throw $e;
         }
     }

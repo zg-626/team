@@ -7,6 +7,7 @@ namespace app\common\services\dividend;
 
 use think\facade\Db;
 use think\facade\Log;
+use app\job\ThresholdDividendCheckJob;
 
 /**
  * 阈值补贴服务类
@@ -40,8 +41,8 @@ class ThresholdDividendService
             // 根据商户所在城市更新分红池
             $this->updateDividendPool($merId, $dividendAmount, $orderData);
             
-            // 检查是否触发阈值补贴
-            $this->checkAndTriggerThresholdDividend($merId);
+            // 异步检查是否触发阈值补贴（避免阻塞主流程）
+            $this->asyncCheckThresholdDividend($merId);
             
             return true;
             
@@ -192,10 +193,70 @@ class ThresholdDividendService
     }
     
     /**
-     * 检查并触发阈值补贴
+     * 异步检查阈值补贴（避免阻塞主流程）
      * @param int $merId
      */
-    private function checkAndTriggerThresholdDividend($merId)
+    private function asyncCheckThresholdDividend($merId)
+    {
+        try {
+            // 使用队列异步处理阈值检查，避免阻塞订单支付流程
+            \think\facade\Queue::push(ThresholdDividendCheckJob::class, [
+                'mer_id' => $merId,
+                'check_time' => time()
+            ]);
+            
+            Log::info('阈值补贴检查任务已加入队列', ['mer_id' => $merId]);
+            
+        } catch (\Exception $e) {
+            Log::error('阈值补贴检查任务入队失败: ' . $e->getMessage(), [
+                'mer_id' => $merId
+            ]);
+            
+            // 队列失败时，降级为同步检查（但不阻塞主流程）
+            $this->checkAndTriggerThresholdDividendSafe($merId);
+        }
+    }
+    
+    /**
+     * 安全的阈值检查（不抛出异常）
+     * @param int $merId
+     */
+    private function checkAndTriggerThresholdDividendSafe($merId)
+    {
+        try {
+            // 获取商户所在城市的分红池
+            $cityId = $this->getMerchantCityId($merId);
+            if (!$cityId) {
+                return;
+            }
+            
+            $pool = Db::name('dividend_pool')
+                ->where('city_id', $cityId)
+                ->find();
+            
+            if (!$pool) {
+                return;
+            }
+            
+            // 检查是否达到阈值
+            if ($this->shouldTriggerDividend($pool)) {
+                // 异步触发阈值补贴
+                $this->triggerAsyncThresholdDividend($pool);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('检查阈值补贴失败: ' . $e->getMessage(), [
+                'mer_id' => $merId
+            ]);
+            // 不抛出异常，避免影响主流程
+        }
+    }
+    
+    /**
+     * 检查并触发阈值补贴（原方法保留，供队列任务使用）
+     * @param int $merId
+     */
+    public function checkAndTriggerThresholdDividend($merId)
     {
         try {
             // 获取商户所在城市的分红池
