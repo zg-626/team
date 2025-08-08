@@ -30,7 +30,7 @@ class PointsOrderCreateRepository
                 'order_type' => $order_type,
                 'order_model' => $order_model,
                 'order_extend' => $order_extend,
-                'true_integral' => (int)$user->integral,
+                'true_integral' => (int)$user->coupon_amount,
                 'address' => $address,
                 ];
     }
@@ -252,7 +252,7 @@ class PointsOrderCreateRepository
         if (!$orderInfo['address']['province_id']) throw new ValidateException('请完善收货地址信息');
         if (!$orderInfo['order_delivery_status']) throw new ValidateException('部分商品配送方式不一致,请单独下单');
         if ($orderInfo['order_total_price'] > 1000000) throw new ValidateException('支付金额超出最大限制');
-        if ($orderInfo['order_total_integral'] > $user->integral) throw new ValidateException('积分不足');
+        if ($orderInfo['order_total_integral'] > $user->coupon_amount) throw new ValidateException('积分不足');
         $merchantCartList = $orderInfo['order'];
         $address =$orderInfo['address'];
         $user_address = isset($address) ? ($address['province'] . $address['city'] . $address['district'] . $address['street'] . $address['detail']) : '';
@@ -329,7 +329,7 @@ class PointsOrderCreateRepository
             //创建订单
             $groupOrder = $storeGroupOrderRepository->create($groupOrder);
             if ($groupOrder['integral'] > 0) {
-                $user->integral = bcsub($user->integral, $groupOrder['integral'], 0);
+                $user->coupon_amount = bcsub($user->coupon_amount, $groupOrder['integral'], 0);
                 $userBillRepository->decBill(
                     $user['uid'],
                     'integral',
@@ -340,7 +340,7 @@ class PointsOrderCreateRepository
                         'title' => '积分商城兑换商品',
                         'number' => $groupOrder['integral'],
                         'mark' => '积分商城兑换商品使用积分' . floatval($groupOrder['integral']) ,
-                        'balance' => $user->integral
+                        'balance' => $user->coupon_amount
                     ]
                 );
                 $user->save();
