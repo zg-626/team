@@ -162,24 +162,20 @@ class ThresholdDividends extends BaseController
     private function calculateDividendTimes($currentAmount, $lastDividend, $initialThreshold)
     {
         if ($lastDividend) {
-            // 有历史记录，计算从上次补贴后的增长
-            $lastAmount = $lastDividend['amount_at_dividend'];
-            $nextThreshold = $lastDividend['next_threshold'];
+            // 有历史记录，使用上次的下一个阈值
+            $checkThreshold = $lastDividend['next_threshold'];
         } else {
-            // 首次补贴，使用初始阈值
-            $lastAmount = 0;
-            $nextThreshold = $initialThreshold;
+            // 首次补贴，需要达到初始阈值的115%才触发
+            $checkThreshold = $initialThreshold * 1.15;
         }
         
         $dividendTimes = 0;
-        $checkAmount = $currentAmount;
-        $checkThreshold = $nextThreshold;
         
         // 循环计算可以执行多少次补贴
-        while ($checkAmount >= $checkThreshold) {
+        while ($currentAmount >= $checkThreshold) {
             $dividendTimes++;
-            $checkAmount = $checkThreshold; // 补贴后重置基准
-            $checkThreshold = $checkThreshold * 1.15; // 下次阈值增长15%
+            // 下次阈值继续增长15%
+            $checkThreshold = $checkThreshold * 1.15;
         }
         
         return $dividendTimes;
@@ -201,7 +197,8 @@ class ThresholdDividends extends BaseController
         if ($lastDividend) {
             $currentThreshold = $lastDividend['next_threshold'];
         } else {
-            $currentThreshold = $pool['initial_threshold'];
+            // 首次补贴，阈值是初始值的115%
+            $currentThreshold = $pool['initial_threshold'] * 1.15;
         }
         
         // 计算下次阈值（增长15%）
@@ -211,17 +208,31 @@ class ThresholdDividends extends BaseController
         Db::startTrans();
         
         try {
-            // 执行补贴分配（复用原有的补贴逻辑）
-            $dividendResult = $this->executeActualDividend($pool, $currentThreshold);
+            // 获取基础保留金额
+            $baseAmount = isset($pool['base_amount']) ? $pool['base_amount'] : $pool['initial_threshold'];
             
-            // 记录阈值补贴日志
+            // 计算增量补贴金额
+            if ($lastDividend) {
+                // 有历史记录，计算从上次阈值到当前阈值的增量
+                $lastThreshold = $lastDividend['threshold_amount'];
+                $incrementalAmount = $currentThreshold - $lastThreshold;
+            } else {
+                // 首次补贴，计算从基础保留金额到当前阈值的增量
+                $incrementalAmount = $currentThreshold - $baseAmount;
+            }
+            
+            // 执行补贴分配（传入增量金额）
+            $dividendResult = $this->executeActualDividend($pool, $incrementalAmount);
+            
+            // 记录补贴日志
             $logId = Db::name('threshold_dividend_log')->insertGetId([
                 'pool_id' => $poolId,
                 'city_id' => $pool['city_id'],
                 'threshold_amount' => $currentThreshold,
-                'amount_at_dividend' => $currentAmount,
+                'amount_at_dividend' => $currentThreshold, // 记录达到的阈值金额
                 'next_threshold' => $nextThreshold,
                 'dividend_amount' => $dividendResult['total_dividend'],
+                'incremental_amount' => $incrementalAmount, // 新增：记录增量金额
                 'team_leader_count' => $dividendResult['team_leader_count'],
                 'integral_user_count' => $dividendResult['integral_user_count'],
                 'sequence' => $sequence,
@@ -236,6 +247,7 @@ class ThresholdDividends extends BaseController
                 ->update([
                     'distributed_amount' => Db::raw('distributed_amount + ' . $dividendResult['total_dividend']),
                     'available_amount' => Db::raw('available_amount - ' . $dividendResult['total_dividend']),
+                    'last_threshold_amount' => $currentThreshold, // 记录最后达到的阈值
                     'update_time' => date('Y-m-d H:i:s')
                 ]);
             
@@ -243,6 +255,7 @@ class ThresholdDividends extends BaseController
             
             Log::info("分红池 {$poolId} 第 {$sequence} 次阈值补贴执行成功", [
                 'threshold' => $currentThreshold,
+                'incremental_amount' => $incrementalAmount,
                 'dividend_amount' => $dividendResult['total_dividend'],
                 'next_threshold' => $nextThreshold
             ]);
@@ -250,8 +263,10 @@ class ThresholdDividends extends BaseController
             return [
                 'log_id' => $logId,
                 'threshold_amount' => $currentThreshold,
-                'amount_at_dividend' => $currentAmount,
+                'amount_at_dividend' => $currentThreshold, // 记录达到的阈值金额
+                'base_amount' => $baseAmount,
                 'next_threshold' => $nextThreshold,
+                'incremental_amount' => $incrementalAmount, // 增量金额
                 'dividend_amount' => $dividendResult['total_dividend'],
                 'team_leader_count' => $dividendResult['team_leader_count'],
                 'integral_user_count' => $dividendResult['integral_user_count'],
