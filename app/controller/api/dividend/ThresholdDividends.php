@@ -362,12 +362,12 @@ class ThresholdDividends extends BaseController
         $userDianModel = new UserModer();
         $dividendStatisticsModel = new DividendStatistics();
         $userDividendRecordModel = new UserDividendRecord();
-        
-        // 获取所有团长（V1及以上级别的用户）
+
+        // 获取所有团长（V1及以上级别的用户,group_id不为5）
         $teamLeaders = $userDianModel
-            ->where('team_level', '>=', 1)
+            ->where('group_id', '<>', 5)
             ->where('status', 1)
-            ->field('uid,nickname,team_level,phone')
+            ->field('uid,nickname,group_id,phone')
             ->select()
             ->toArray();
         
@@ -400,7 +400,7 @@ class ThresholdDividends extends BaseController
             $teamLeaderResults[] = [
                 'uid' => $leader['uid'],
                 'nickname' => $leader['nickname'],
-                'level' => $leader['team_level'],
+                'level' => $leader['group_id'],
                 'phone' => $leader['phone'],
                 'dividend_amount' => $leaderDividend
             ];

@@ -265,7 +265,7 @@ class BatchUpdateLevels extends BaseController
         $this->performanceStats['query_count']++;
         
         return $userModel
-            ->field('uid,phone,nickname,team_level')
+            ->field('uid,phone,nickname,group_id')
             ->whereIn('uid', $userIds)
             ->select()
             ->toArray();
@@ -441,15 +441,15 @@ class BatchUpdateLevels extends BaseController
         $newLevel = $this->calculateUserLevelNew($personalTurnover, $teamTurnover, $levelCounts);
         
         // 更新用户级别
-        $oldLevel = $user['team_level'] ?? 0;
+        $oldLevel = $user['group_id'] ?? 0;
         $levelUpdated = false;
         
         if ($newLevel != $oldLevel) {
             if (!$isDryRun) {
-                // 只更新系统用户表的team_level字段
+                // 只更新系统用户表的group_id字段
                 $this->performanceStats['query_count']++;
                 $userModel->where('uid', $userId)->update([
-                    'team_level' => $newLevel,
+                    'group_id' => $newLevel,
                     'update_time' => time()
                 ]);
                 
@@ -676,7 +676,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamLevelCountsWithCache($teamMemberIds, $userModel)
     {
-        $cacheKey = $this->cachePrefix . "team_levels_" . md5(implode(',', $teamMemberIds));
+        $cacheKey = $this->cachePrefix . "group_ids_" . md5(implode(',', $teamMemberIds));
         $levelCounts = Cache::get($cacheKey);
         
         if ($levelCounts === false) {
@@ -775,12 +775,12 @@ class BatchUpdateLevels extends BaseController
         foreach ($batches as $batch) {
             $users = $userModel
                 ->whereIn('uid', $batch)
-                ->field('team_level')
+                ->field('group_id')
                 ->select()
                 ->toArray();
             
             foreach ($users as $user) {
-                $level = $user['team_level'] ?? 0;
+                $level = $user['group_id'] ?? 0;
                 switch ($level) {
                     case 1:
                         $levelCounts['v1']++;

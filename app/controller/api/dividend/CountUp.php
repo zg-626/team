@@ -82,10 +82,10 @@ class CountUp extends BaseController
             $levelStats = [];
             if (!empty($consumerUserIds)) {
                 $levelStats = $userModel
-                    ->field('team_level, count(*) as user_count')
+                    ->field('group_id, count(*) as user_count')
                     ->where('status', 1)
                     ->whereIn('uid', $consumerUserIds)
-                    ->group('team_level')
+                    ->group('group_id')
                     ->select()
                     ->toArray();
             }
@@ -99,7 +99,7 @@ class CountUp extends BaseController
             ];
             
             foreach ($levelStats as $stat) {
-                $level = $stat['team_level'] ?? 0;
+                $level = $stat['group_id'] ?? 0;
                 $count = $stat['user_count'] ?? 0;
                 $levelCounts['v' . $level] = $count;
             }
