@@ -456,7 +456,7 @@ class ThresholdDividends extends BaseController
             $user = $userModel->where('phone', $phone)->find();
             if ($user) {
                 $newBrokeragePrice = $user['brokerage_price'] + $dividendAmount;
-                $userModel->where('id', $user['uid'])->update([
+                $userModel->where('uid', $user['uid'])->update([
                     'brokerage_price' => $newBrokeragePrice
                 ]);
             }
