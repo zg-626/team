@@ -250,6 +250,7 @@ class StoreOrderRepository extends BaseRepository
                     $order->offline_audit_status = 1;
                     $order->status = 3;
                     $order->pay_time = $order->create_time;
+                    $this->takeAfter($order, $groupOrder->user);
                 }
                 // 赠送商户积分
                 //$this->giveMerIntegral($order->mer_id,$groupOrder);
@@ -541,6 +542,7 @@ class StoreOrderRepository extends BaseRepository
             $orders->status = 3;
             $orders->pay_time = $time;
             $this->computed($orders,$user);
+            $this->computedEquityValue($orders,$user);
             if(!empty($data)){
                 $orders->transaction_id = $data['data']['acc_trade_no']??'';
                 $orders->lkl_log_no = $data['data']['log_no']??'';
@@ -1560,6 +1562,48 @@ class StoreOrderRepository extends BaseRepository
     }
 
     /**
+     * 计算权益值奖励
+     * @param StoreOrder $order
+     * @param User $user
+     * @author AI Assistant
+     */
+    public function computedEquityValue(StoreOrder $order, User $user)
+    {
+        $userRepository = app()->make(UserRepository::class);
+        
+        if ($order->spread_uid) {
+            $spreadUid = $order->spread_uid;
+            $topUid = $order->top_uid;
+        } else if ($order->is_selfbuy) {
+            $spreadUid = $user->uid;
+            $topUid = $user->spread_uid;
+        } else {
+            $spreadUid = $user->spread_uid;
+            $topUid = $user->top_uid;
+        }
+        
+        // 给一级推广用户增加权益值（按订单金额的一定比例）
+        if ($order->extension_one > 0 && $spreadUid) {
+            $equityValueRate = 0.05; // 5%的权益值奖励比例
+            $equityValue = bcmul($order->pay_price, $equityValueRate, 2);
+            if ($equityValue > 0) {
+                $userRepository->incEquityValue($spreadUid, $equityValue, $order->order_id, 
+                    $user['nickname'] . '成功消费' . floatval($order['pay_price']) . '元,奖励推广权益值' . floatval($equityValue));
+            }
+        }
+        
+        // 给二级推广用户增加权益值（按订单金额的一定比例）
+        if ($order->extension_two > 0 && $topUid) {
+            $equityValueRate = 0.03; // 3%的权益值奖励比例
+            $equityValue = bcmul($order->pay_price, $equityValueRate, 2);
+            if ($equityValue > 0) {
+                $userRepository->incEquityValue($topUid, $equityValue, $order->order_id, 
+                    $user['nickname'] . '成功消费' . floatval($order['pay_price']) . '元,奖励推广权益值' . floatval($equityValue));
+            }
+        }
+    }
+
+    /**
      * @param StoreOrder $order
      * @param User $user
      * @param string $type
@@ -1569,7 +1613,10 @@ class StoreOrderRepository extends BaseRepository
     public function takeAfter(StoreOrder $order, ?User $user)
     {
         Db::transaction(function () use ($user, $order) {
-            if ($user) $this->computed($order, $user);
+            if ($user) {
+                $this->computed($order, $user);
+                $this->computedEquityValue($order, $user);
+            }
             Queue::push(SendSmsJob::class, ['tempId' => 'ORDER_TAKE_SUCCESS', 'id' => $order->order_id]);
             Queue::push(SendSmsJob::class, ['tempId' => 'ADMIN_TAKE_DELIVERY_CODE', 'id' => $order->order_id]);
             app()->make(MerchantRepository::class)->computedLockMoney($order);

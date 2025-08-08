@@ -442,6 +442,77 @@ class UserRepository extends BaseRepository
     }
 
     /**
+     * 修改用户权益值
+     * @param $id 用户ID
+     * @param $adminId 管理员ID
+     * @param $type 类型 1增加 2减少
+     * @param $equityValue 权益值
+     * @throws DataNotFoundException
+     * @throws DbException
+     * @throws ModelNotFoundException
+     * @author 系统生成
+     */
+    public function changeEquityValue($id, $adminId, $type, $equityValue)
+    {
+        $user = $this->dao->get($id);
+        Db::transaction(function () use ($id, $adminId, $user, $type, $equityValue) {
+            $equityValue = floatval($equityValue);
+            $balance = $type == 1 ? bcadd($user->equity_value, $equityValue, 2) : bcsub($user->equity_value, $equityValue, 2);
+            $user->save(['equity_value' => $balance]);
+            /** @var UserBillRepository $make */
+            $make = app()->make(UserBillRepository::class);
+            if ($type == 1) {
+                $make->incBill($id, 'equity_value', 'sys_inc', [
+                    'link_id' => $adminId,
+                    'status' => 1,
+                    'title' => '系统增加权益值',
+                    'number' => $equityValue,
+                    'mark' => '系统增加了' . floatval($equityValue) . '权益值',
+                    'balance' => $balance
+                ]);
+            } else {
+                $make->decBill($id, 'equity_value', 'sys_dec', [
+                    'link_id' => $adminId,
+                    'status' => 1,
+                    'title' => '系统减少权益值',
+                    'number' => $equityValue,
+                    'mark' => '系统减少了' . floatval($equityValue) . '权益值',
+                    'balance' => $balance
+                ]);
+            }
+        });
+    }
+
+    /**
+     * 给推广用户增加权益值
+     * @param $uid 用户ID
+     * @param $equityValue 权益值
+     * @param $orderId 订单ID
+     * @param $mark 备注
+     * @author 系统生成
+     */
+    public function incEquityValue($uid, $equityValue, $orderId = 0, $mark = '')
+    {
+        $user = $this->dao->get($uid);
+        Db::transaction(function () use ($uid, $user, $equityValue, $orderId, $mark) {
+            $equityValue = floatval($equityValue);
+            $balance = bcadd($user->equity_value, $equityValue, 2);
+            $user->save(['equity_value' => $balance]);
+            
+            /** @var UserBillRepository $make */
+            $make = app()->make(UserBillRepository::class);
+            $make->incBill($uid, 'equity_value', 'promotion_reward', [
+                'link_id' => $orderId,
+                'status' => 1,
+                'title' => '推广奖励权益值',
+                'number' => $equityValue,
+                'mark' => $mark ?: '推广用户获得权益值奖励' . floatval($equityValue),
+                'balance' => $balance
+            ]);
+        });
+    }
+
+    /**
      * @param $id
      * @param $adminId
      * @param $type

@@ -95,6 +95,14 @@ class UserBillRepository extends BaseRepository
             'sys_members/member_reply_num' => '评价获得成长值',
             'sys_members/member_share_num' => '邀请获得成长值',
             'sys_members/member_community_num'  => '社区种草内容获得成长值',
+        ],
+        'equity_value' => [
+            'equity_value/promotion_reward' => '推广奖励权益值',
+            'equity_value/order_reward' => '订单奖励权益值',
+            'equity_value/sys_inc' => '系统增加权益值',
+            'equity_value/sys_dec' => '系统减少权益值',
+            'equity_value/exchange' => '权益值兑换',
+            'equity_value/refund' => '退还权益值',
         ]
     ];
 
@@ -408,6 +416,52 @@ class UserBillRepository extends BaseRepository
                 }
             }
         });
+    }
+
+    /**
+     * 今日权益值统计
+     * @param string $type inc增加 dec减少
+     * @return float
+     */
+    public function todayEquityValue($type = 'inc')
+    {
+        $where = [
+            'category' => 'equity_value',
+            'status' => 1,
+        ];
+        
+        if ($type === 'inc') {
+            $where[] = ['number', '>', 0];
+        } else {
+            $where[] = ['number', '<', 0];
+        }
+        
+        return $this->dao->search($where)
+            ->whereTime('create_time', 'today')
+            ->sum('number') ?: 0;
+    }
+
+    /**
+     * 本月权益值统计
+     * @param string $type inc增加 dec减少
+     * @return float
+     */
+    public function monthEquityValue($type = 'inc')
+    {
+        $where = [
+            'category' => 'equity_value',
+            'status' => 1,
+        ];
+        
+        if ($type === 'inc') {
+            $where[] = ['number', '>', 0];
+        } else {
+            $where[] = ['number', '<', 0];
+        }
+        
+        return $this->dao->search($where)
+            ->whereTime('create_time', 'month')
+            ->sum('number') ?: 0;
     }
 
 
