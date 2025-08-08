@@ -179,6 +179,8 @@ Route::group('api/', function () {
             Route::get('brokerage_list', 'User/brokerage_list');
             // 抵用卷记录
             Route::get('coupon_list', 'User/coupon_list');
+            // 权益值记录
+            Route::get('equity_value_list', 'User/equity_value_list');
             //推广人订单
             Route::get('spread_order', 'User/spread_order');
             //推广人订单

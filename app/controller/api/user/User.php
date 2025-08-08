@@ -192,6 +192,18 @@ class User extends BaseController
         return app('json')->success($billRepository->userList($where, $this->request->uid(), $page, $limit));
     }
 
+    // 权益值记录
+    public function equity_value_list(UserBillRepository $billRepository)
+    {
+        [$page, $limit] = $this->getPage();
+        [$start,$stop]= $this->request->params(['start','stop'],true);
+        $where['date'] = $start&&$stop ? date('Y/m/d',$start).'-'.date('Y/m/d',$stop) : '';
+        $where['category'] = 'equity_value';
+        // 查询status 等于0、1或-1的数据
+        $where['status'] = [0, 1, -1];
+        return app('json')->success($billRepository->userList($where, $this->request->uid(), $page, $limit));
+    }
+
     /**
      * @return mixed
      * @throws DataNotFoundException
