@@ -264,8 +264,9 @@ class ThresholdDividends extends BaseController
                 $lastThreshold = $lastDividend['threshold_amount'];
                 $incrementalAmount = $currentThreshold - $lastThreshold;
             } else {
-                // 首次补贴，计算从基础保留金额到当前阈值的增量
-                $incrementalAmount = $currentThreshold - $baseAmount;
+                // 首次补贴，计算从配置的默认初始阈值到当前阈值的增量
+                $defaultInitialThreshold = config('threshold_dividend.basic.default_initial_threshold', 1000.00);
+                $incrementalAmount = $currentThreshold - $defaultInitialThreshold;
             }
             
             // 执行补贴分配（传入增量金额）
