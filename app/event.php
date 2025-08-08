@@ -25,7 +25,7 @@ return [
         'swoole.init' => [
             \crmeb\listens\InitSwooleLockListen::class,
             \crmeb\listens\CreateTimerListen::class,
-//            \crmeb\listens\QueueListen::class,
+            \crmeb\listens\QueueListen::class,
         ],
         'swoole.workerStart' => [\app\webscoket\SwooleWorkerStart::class],
         'swoole.workerExit' => [\crmeb\listens\SwooleWorkerExitListen::class],

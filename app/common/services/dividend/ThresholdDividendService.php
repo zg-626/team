@@ -43,7 +43,7 @@ class ThresholdDividendService
             $this->updateDividendPool($merId, $dividendAmount, $orderData);
             
             // 异步检查是否触发阈值补贴（避免阻塞主流程）
-            $this->asyncCheckThresholdDividend($merId);
+            //$this->asyncCheckThresholdDividend($merId);
             
             return true;
             
