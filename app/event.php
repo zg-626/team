@@ -51,7 +51,7 @@ return [
             \crmeb\listens\ProductGroupStatusCheckListen::class,
             \crmeb\listens\SyncSpreadStatusListen::class,
             \crmeb\listens\GuaranteeCountListen::class,
-            \crmeb\listens\AutoUnLockIntegralListen::class,
+//            \crmeb\listens\AutoUnLockIntegralListen::class,
             \crmeb\listens\AutoUnLockDeductionListen::class,
             \crmeb\listens\AutoClearIntegralListen::class,
             \crmeb\listens\MerchantApplyMentsCheckListen::class,
