@@ -31,7 +31,25 @@ class BatchUpdateLevels extends BaseController
         'cache_misses' => 0
     ];
 
-    public function batchUpdateLevels($isDryRun,$forceUpdate)
+    /**
+     * 批量更新用户级别接口
+     * @return \think\response\Json
+     */
+    public function index()
+    {
+        $isDryRun = $this->request->param('dry_run', false);
+        $forceUpdate = $this->request->param('force_update', false);
+        
+        try {
+            $result = $this->batchUpdateLevels($isDryRun, $forceUpdate);
+            return app('json')->success($result, '批量级别更新任务执行完成');
+        } catch (\Exception $e) {
+            Log::error('批量级别更新任务执行失败: ' . $e->getMessage());
+            return app('json')->fail('批量级别更新任务执行失败: ' . $e->getMessage());
+        }
+    }
+
+    private function batchUpdateLevels($isDryRun, $forceUpdate)
     {
         $this->performanceStats['start_time'] = microtime(true);
         //$isDryRun = $input->hasOption('dry-run');
@@ -81,15 +99,20 @@ class BatchUpdateLevels extends BaseController
             // 输出最终统计和性能报告
             $this->outputFinalReport($processResult);
             
+            return [
+                'total_users' => $totalCount,
+                'process_result' => $processResult,
+                'performance_stats' => $this->performanceStats,
+                'dry_run' => $isDryRun,
+                'message' => '批量级别更新任务执行完成'
+            ];
             
         } catch (\Exception $e) {
             $errorMsg = '批量级别更新任务执行失败: ' . $e->getMessage();
             Log::error($errorMsg, ['trace' => $e->getTraceAsString()]);
             Log::info($errorMsg);
-            return 1;
+            throw $e;
         }
-        
-        return 0;
     }
     
     /**

@@ -12,6 +12,7 @@ use think\console\Input;
 use think\console\Output;
 use think\facade\Log;
 use think\facade\Db;
+use crmeb\basic\BaseController;
 
 /**
  * 级别统计任务
@@ -20,9 +21,24 @@ use think\facade\Db;
 class CountUp extends BaseController
 {
     /**
+     * 级别统计接口
+     * @return \think\response\Json
+     */
+    public function index()
+    {
+        try {
+            $result = $this->countUp();
+            return app('json')->success($result, '级别统计任务执行完成');
+        } catch (\Exception $e) {
+            Log::error('级别统计任务执行失败: ' . $e->getMessage());
+            return app('json')->fail('级别统计任务执行失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * 统计昨天的订单数据，计算个人和团队流水
      */
-    public function countUp()
+    private function countUp()
     {
         Log::info('级别统计任务开始执行');
         
@@ -107,13 +123,12 @@ class CountUp extends BaseController
             Log::info('级别统计任务完成', $logData);
             Log::info('级别统计任务执行完成!');
             
+            return $logData;
+            
         } catch (\Exception $e) {
             $errorMsg = '级别统计任务执行失败: ' . $e->getMessage();
             Log::error($errorMsg);
             Log::info($errorMsg);
-            return 1;
         }
-        
-        return 0;
     }
 }

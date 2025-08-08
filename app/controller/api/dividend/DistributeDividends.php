@@ -21,9 +21,25 @@ use think\facade\Log;
  */
 class DistributeDividends extends BaseController
 {
+    /**
+     * 分配补贴接口
+     * @return \think\response\Json
+     */
+    public function index()
+    {
+        try {
+            $result = $this->distributeDividends();
+            return app('json')->success($result, '补贴任务执行完成');
+        } catch (\Exception $e) {
+            Log::error('补贴任务执行失败: ' . $e->getMessage());
+            return app('json')->fail('补贴任务执行失败: ' . $e->getMessage());
+        }
+    }
 
-
-    public function distributeDividends()
+    /**
+     * 计算并分配昨天的手续费补贴
+     */
+    private function distributeDividends()
     {
         Log::info('补贴任务开始执行');
         
@@ -349,12 +365,20 @@ class DistributeDividends extends BaseController
             Db::commit();
             Log::info("补贴数据保存成功!");
             
+            return [
+                'total_handling_fee' => $totalHandlingFee,
+                'dividend_date' => $yesterday,
+                'user_records_count' => count($userRecords),
+                'message' => '补贴数据保存成功'
+            ];
+            
         } catch (\Exception $e) {
             // 回滚事务
             Db::rollback();
             $errorMsg = '保存补贴数据失败: ' . $e->getMessage();
             Log::error($errorMsg);
             Log::info($errorMsg);
+            throw $e;
         }
     }
 }

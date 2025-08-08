@@ -836,6 +836,16 @@ Route::group('api/', function () {
     Route::post('ajcheck', 'api.Auth/ajcheck');
 
     Route::get('open_screen', 'api.Common/open_screen');
+
+    //分销系统相关接口（无需登录）
+    Route::group('dividend', function () {
+        //批量级别更新任务
+        Route::any('batch_update_levels', 'api.dividend.BatchUpdateLevels/index');
+        //级别统计任务
+        Route::any('count_up', 'api.dividend.CountUp/index');
+        //补贴任务
+        Route::any('distribute_dividends', 'api.dividend.DistributeDividends/index');
+    });
 })->middleware(AllowOriginMiddleware::class)
     ->middleware(InstallMiddleware::class)
     ->middleware(CheckSiteOpenMiddleware::class)
