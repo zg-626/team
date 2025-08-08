@@ -56,7 +56,7 @@ class CountUp extends BaseController
             
             // 统计昨天商家980的订单数据
             $totalStats = $orderModel
-                ->where('paid', 1)
+                ->where('paid', 1)->where('offline_audit_status', 1)
                 ->where('mer_id', 980)
                 ->where('pay_time', 'between', [$yesterdayStart, $yesterdayEnd])
                 ->field('count(*) as order_count, sum(pay_price) as total_turnover, sum(handling_fee) as total_handling_fee')
@@ -72,8 +72,8 @@ class CountUp extends BaseController
             Log::info("- 总手续费: {$totalHandlingFee}");
             
             // 获取在商家980消费过的用户ID
-            $consumerUserIds = $orderModel
-                ->where('paid', 1)
+            $consumerUserIds = Db::name('store_order')
+                ->where('paid', 1)->where('offline_audit_status', 1)
                 ->where('mer_id', 980)
                 ->distinct(true)
                 ->column('uid');
@@ -82,10 +82,10 @@ class CountUp extends BaseController
             $levelStats = [];
             if (!empty($consumerUserIds)) {
                 $levelStats = $userModel
-                    ->field('brokerage_level, count(*) as user_count')
+                    ->field('team_level, count(*) as user_count')
                     ->where('status', 1)
                     ->whereIn('uid', $consumerUserIds)
-                    ->group('brokerage_level')
+                    ->group('team_level')
                     ->select()
                     ->toArray();
             }
@@ -99,7 +99,7 @@ class CountUp extends BaseController
             ];
             
             foreach ($levelStats as $stat) {
-                $level = $stat['brokerage_level'] ?? 0;
+                $level = $stat['team_level'] ?? 0;
                 $count = $stat['user_count'] ?? 0;
                 $levelCounts['v' . $level] = $count;
             }

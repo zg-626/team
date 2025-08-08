@@ -35,7 +35,7 @@ return [
 //            \crmeb\listens\AutoOrderProfitsharingListen::class,
 //            \crmeb\listens\AutoOrderOfflineProfitsharingListen::class,// 微信服务商自动分账
             \crmeb\listens\AutoOrderLakalaListen::class,// 拉卡拉自动分账
-            \crmeb\listens\AutoOrderOfflineShippingListen::class,// 自动虚拟发货
+            //\crmeb\listens\AutoOrderOfflineShippingListen::class,// 自动虚拟发货
             \crmeb\listens\AuthTakeOrderListen::class,
             \crmeb\listens\AutoCancelGroupOrderListen::class,
             \crmeb\listens\AutoCancelOfflineOrderListen::class,

@@ -14,7 +14,7 @@ use think\console\Input;
 use think\console\Output;
 use think\facade\Db;
 use think\facade\Log;
-
+use crmeb\basic\BaseController;
 /**
  * 补贴任务
  * 计算并分配昨天的手续费补贴
@@ -58,7 +58,7 @@ class DistributeDividends extends BaseController
             
             // 统计昨天商家980订单的handling_fee总额
             $totalHandlingFee = $orderModel
-                ->where('paid', 1)
+                ->where('paid', 1)->where('offline_audit_status', 1)
                 ->where('mer_id', 980)
                 ->where('pay_time', 'between', [$yesterdayStart, $yesterdayEnd])
                 ->sum('handling_fee');

@@ -5,14 +5,14 @@
 
 namespace app\controller\api\dividend;
 
-use app\common\model\store\order\StoreOrderOffline;
+use app\common\model\store\order\StoreOrder;
 use app\common\model\user\User;
 use think\console\Input;
 use think\console\Output;
 use think\facade\Log;
 use think\facade\Db;
 use think\facade\Cache;
-
+use crmeb\basic\BaseController;
 /**
  * 批量级别更新任务（优化版）
  * 根据新的升级条件批量更新所有用户级别
@@ -67,7 +67,7 @@ class BatchUpdateLevels extends BaseController
         
         try {
             $userModel = new User();
-            $orderModel = new StoreOrderOffline();
+            $orderModel = new StoreOrder();
             
             Log::info("开始批量更新用户级别...");
             
@@ -117,7 +117,7 @@ class BatchUpdateLevels extends BaseController
     
     /**
      * 获取消费用户ID（带缓存优化）
-     * @param StoreOrderOffline $orderModel
+     * @param StoreOrder $orderModel
      * @param bool $forceUpdate
      * @return array
      */
@@ -136,8 +136,8 @@ class BatchUpdateLevels extends BaseController
         $this->performanceStats['cache_misses']++;
         $this->performanceStats['query_count']++;
         
-        $consumerUserIds = Db::name('store_order_offline')
-            ->where('paid', 1)
+        $consumerUserIds = Db::name('store_order')
+            ->where('paid', 1)->where('offline_audit_status', 1)
             ->where('mer_id', 980)
             ->group('uid')
             ->select();
@@ -152,7 +152,7 @@ class BatchUpdateLevels extends BaseController
      * 分批处理用户
      * @param array $consumerUserIds
      * @param User $userModel
-     * @param StoreOrderOffline $orderModel
+     * @param StoreOrder $orderModel
      * @param bool $isDryRun
      * @return array
      */
@@ -174,7 +174,7 @@ class BatchUpdateLevels extends BaseController
             
             // 开启事务
             if (!$isDryRun) {
-                (new Db)->startTrans();
+                Db::startTrans();
             }
             
             try {
@@ -184,7 +184,7 @@ class BatchUpdateLevels extends BaseController
                 
                 if (empty($users)) {
                     if (!$isDryRun) {
-                        (new Db)->rollback();
+                        Db::rollback();
                     }
                     break;
                 }
@@ -395,7 +395,7 @@ class BatchUpdateLevels extends BaseController
      * 计算并更新用户级别（优化版）
      * @param int $userId
      * @param User $userModel
-     * @param StoreOrderOffline $orderModel
+     * @param StoreOrder $orderModel
      * @param bool $isDryRun
      * @return array
      */
@@ -505,7 +505,7 @@ class BatchUpdateLevels extends BaseController
     /**
      * 获取个人流水（带缓存）
      * @param int $userId
-     * @param StoreOrderOffline $orderModel
+     * @param StoreOrder $orderModel
      * @return float
      */
     private function getPersonalTurnoverWithCache($userId, $orderModel)
@@ -519,7 +519,7 @@ class BatchUpdateLevels extends BaseController
             
             $personalStats = $orderModel
                 ->where('uid', $userId)
-                ->where('paid', 1)
+                ->where('paid', 1)->where('offline_audit_status', 1)
                 ->where('mer_id', 980)
                 ->field('sum(pay_price) as personal_turnover')
                 ->find();
@@ -536,7 +536,7 @@ class BatchUpdateLevels extends BaseController
     /**
      * 获取团队流水（带缓存）
      * @param array $teamMemberIds
-     * @param StoreOrderOffline $orderModel
+     * @param StoreOrder $orderModel
      * @return float
      */
     private function getTeamTurnoverWithCache($teamMemberIds, $orderModel)
@@ -550,7 +550,7 @@ class BatchUpdateLevels extends BaseController
             
             $teamStats = $orderModel
                 ->whereIn('uid', $teamMemberIds)
-                ->where('paid', 1)
+                ->where('paid', 1)->where('offline_audit_status', 1)
                 ->where('mer_id', 980)
                 ->field('sum(pay_price) as team_turnover')
                 ->find();
