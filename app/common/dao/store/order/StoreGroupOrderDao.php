@@ -90,6 +90,8 @@ class StoreGroupOrderDao extends BaseDao
     public function getTimeOutIds($time, $is_remind = false)
     {
         return StoreGroupOrder::getDB()->where('is_del', 0)->where('paid', 0)
+            ->where('pay_type','<>', 7)
+            ->where('payment_voucher', '')
             ->when($is_remind, function ($query) {
                 $query->where('is_remind', 0);
             })->where('create_time', '<=', $time)->column('group_order_id');
