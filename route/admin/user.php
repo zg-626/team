@@ -428,6 +428,28 @@ Route::group(function () {
         '_auth' => true,
     ]);
 
+    // 用户权益值管理
+    Route::group('equity_value', function () {
+        Route::get('list', 'UserEquityValue/getList')->name('systemUserEquityValueList')->option([
+            '_alias' => '权益值日志列表',
+        ]);
+        Route::post('change', 'UserEquityValue/changeEquityValue')->name('systemUserEquityValueChange')->option([
+            '_alias' => '修改用户权益值',
+        ]);
+        Route::get('statistics', 'UserEquityValue/getStatistics')->name('systemUserEquityValueStatistics')->option([
+            '_alias' => '权益值统计',
+        ]);
+        Route::post('batch_add', 'UserEquityValue/batchAddEquityValue')->name('systemUserEquityValueBatchAdd')->option([
+            '_alias' => '批量增加权益值',
+        ]);
+        Route::get('detail/:uid', 'UserEquityValue/getUserEquityDetail')->name('systemUserEquityValueDetail')->option([
+            '_alias' => '用户权益值详情',
+        ]);
+    })->prefix('admin.user.')->option([
+        '_path' => '/equity_value/list',
+        '_auth' => true,
+    ]);
+
 
 })->middleware(AllowOriginMiddleware::class)
     ->middleware(AdminTokenMiddleware::class, true)
