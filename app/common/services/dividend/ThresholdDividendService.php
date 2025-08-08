@@ -35,8 +35,9 @@ class ThresholdDividendService
                 return false;
             }
             
-            // 计算40%的手续费
-            $dividendAmount = $handlingFee * 0.4;
+            // 从配置文件获取手续费分红比例
+            $dividendRate = config('threshold_dividend.basic.dividend_rate', 0.40);
+            $dividendAmount = $handlingFee * $dividendRate;
             
             // 根据商户所在城市更新分红池
             $this->updateDividendPool($merId, $dividendAmount, $orderData);

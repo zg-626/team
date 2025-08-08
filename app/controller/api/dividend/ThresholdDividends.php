@@ -93,7 +93,7 @@ class ThresholdDividends extends BaseController
             $lastDividend = $this->getLastDividendRecord($poolId);
             
             // 计算需要执行的补贴次数
-            $dividendTimes = $this->calculateDividendTimes($currentAmount, $lastDividend, $initialThreshold);
+            $dividendTimes = $this->calculateDividendTimes($currentAmount, $lastDividend);
             
             $executedDividends = [];
             
@@ -156,17 +156,21 @@ class ThresholdDividends extends BaseController
      * 计算需要执行的补贴次数
      * @param float $currentAmount 当前金额
      * @param array|null $lastDividend 最后一次补贴记录
-     * @param float $initialThreshold 初始阈值
      * @return int
      */
-    private function calculateDividendTimes($currentAmount, $lastDividend, $initialThreshold)
+    private function calculateDividendTimes($currentAmount, $lastDividend)
     {
+        // 从配置文件获取增长率
+        $growthRate = config('threshold_dividend.basic.growth_rate', 0.15);
+        $initialTriggerRate = config('threshold_dividend.basic.initial_trigger_rate', 1.15);
+        
         if ($lastDividend) {
             // 有历史记录，使用上次的下一个阈值
             $checkThreshold = $lastDividend['next_threshold'];
         } else {
-            // 首次补贴，需要达到初始阈值的115%才触发
-            $checkThreshold = $initialThreshold * 1.15;
+            // 首次补贴，需要达到配置的默认初始阈值的配置倍数才触发
+            $defaultInitialThreshold = config('threshold_dividend.basic.default_initial_threshold', 1000.00);
+            $checkThreshold = $defaultInitialThreshold * $initialTriggerRate;
         }
         
         $dividendTimes = 0;
@@ -174,8 +178,8 @@ class ThresholdDividends extends BaseController
         // 循环计算可以执行多少次补贴
         while ($currentAmount >= $checkThreshold) {
             $dividendTimes++;
-            // 下次阈值继续增长15%
-            $checkThreshold = $checkThreshold * 1.15;
+            // 下次阈值按配置的增长率增长
+            $checkThreshold = $checkThreshold * (1 + $growthRate);
         }
         
         return $dividendTimes;
@@ -193,23 +197,32 @@ class ThresholdDividends extends BaseController
         $poolId = $pool['id'];
         $currentAmount = $this->getCurrentPoolAmount($poolId);
         
+        // 从配置文件获取增长率
+        $growthRate = config('threshold_dividend.basic.growth_rate', 0.15);
+        $initialTriggerRate = config('threshold_dividend.basic.initial_trigger_rate', 1.15);
+        
         // 计算当前阈值
         if ($lastDividend) {
             $currentThreshold = $lastDividend['next_threshold'];
         } else {
-            // 首次补贴，阈值是初始值的115%
-            $currentThreshold = $pool['initial_threshold'] * 1.15;
+            // 首次补贴，使用配置的默认初始阈值乘以触发倍率
+            $defaultInitialThreshold = config('threshold_dividend.basic.default_initial_threshold', 1000.00);
+            $currentThreshold = $defaultInitialThreshold * $initialTriggerRate;
         }
         
-        // 计算下次阈值（增长15%）
-        $nextThreshold = $currentThreshold * 1.15;
+        // 计算下次阈值（按配置的增长率增长）
+        $nextThreshold = $currentThreshold * (1 + $growthRate);
+        
+        // 获取基础保留金额
+        $baseAmount = isset($pool['base_amount']) ? $pool['base_amount'] : $pool['initial_threshold'];
         
         // 开启事务（设置较短的锁等待超时）
         Db::startTrans();
         
         try {
-            // 设置当前会话的锁等待超时时间为10秒
-            Db::execute('SET innodb_lock_wait_timeout = 10');
+            // 从配置文件获取锁等待超时时间
+            $lockWaitTimeout = config('threshold_dividend.security.lock_wait_timeout', 10);
+            Db::execute("SET innodb_lock_wait_timeout = {$lockWaitTimeout}");
             
             // 使用SELECT FOR UPDATE锁定分红池记录，避免并发修改
             $currentPool = Db::name('dividend_pool')
@@ -233,7 +246,7 @@ class ThresholdDividends extends BaseController
                     'log_id' => 0,
                     'threshold_amount' => $currentThreshold,
                     'amount_at_dividend' => $currentAmount,
-                    'base_amount' => $baseAmount ?? 0,
+                    'base_amount' => $baseAmount,
                     'next_threshold' => $nextThreshold,
                     'incremental_amount' => 0,
                     'dividend_amount' => 0,
@@ -244,8 +257,6 @@ class ThresholdDividends extends BaseController
                     'reason' => '金额不足'
                 ];
             }
-            // 获取基础保留金额
-            $baseAmount = isset($pool['base_amount']) ? $pool['base_amount'] : $pool['initial_threshold'];
             
             // 计算增量补贴金额
             if ($lastDividend) {
@@ -323,7 +334,7 @@ class ThresholdDividends extends BaseController
                     'log_id' => 0,
                     'threshold_amount' => $currentThreshold,
                     'amount_at_dividend' => 0,
-                    'base_amount' => $baseAmount ?? 0,
+                    'base_amount' => $baseAmount,
                     'next_threshold' => $nextThreshold,
                     'incremental_amount' => 0,
                     'dividend_amount' => 0,
@@ -368,12 +379,16 @@ class ThresholdDividends extends BaseController
             ->select()
             ->toArray();
         
-        // 计算30%团长补贴
-        $teamLeaderPool = $dividendAmount * 0.3;
+        // 从配置文件获取分配比例
+        $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
+        $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
+        
+        // 计算团长补贴
+        $teamLeaderPool = $dividendAmount * $teamLeaderRate;
         $teamLeaderCount = count($teamLeaders);
         $dividendPerLeader = $teamLeaderCount > 0 ? $teamLeaderPool / $teamLeaderCount : 0;
         
-        // 为团长分配30%补贴
+        // 为团长分配补贴
         $teamLeaderResults = [];
         foreach ($teamLeaders as $leader) {
             $leaderDividend = round($dividendPerLeader, 2);
@@ -390,8 +405,8 @@ class ThresholdDividends extends BaseController
             ];
         }
         
-        // 计算70%积分补贴
-        $integralPool = $dividendAmount * 0.7;
+        // 计算积分补贴
+        $integralPool = $dividendAmount * $integralRate;
         $integralUserResults = [];
         
         if (count($integralUsers) > 0) {
@@ -518,6 +533,12 @@ class ThresholdDividends extends BaseController
         $poolId
     ) {
         try {
+            // 从配置文件获取分配比例用于备注
+            $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
+            $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
+            $teamLeaderPercent = intval($teamLeaderRate * 100);
+            $integralPercent = intval($integralRate * 100);
+            
             // 计算实际补贴总额
             $totalDividendAmount = array_sum(array_column($teamLeaderResults, 'dividend_amount')) + 
                                  array_sum(array_column($integralUserResults, 'dividend_amount'));
@@ -567,7 +588,7 @@ class ThresholdDividends extends BaseController
                     'weight_percent' => 0,
                     'dividend_amount' => $leader['dividend_amount'],
                     'status' => 1,
-                    'remark' => "阈值团长补贴(30%)-池{$poolId}",
+                    'remark' => "阈值团长补贴({$teamLeaderPercent}%)-池{$poolId}",
                     'create_time' => time(),
                     'update_time' => time()
                 ];
@@ -588,7 +609,7 @@ class ThresholdDividends extends BaseController
                     'weight_percent' => $user['weight_percent'],
                     'dividend_amount' => $user['dividend_amount'],
                     'status' => 1,
-                    'remark' => "阈值积分补贴(70%)-池{$poolId}",
+                    'remark' => "阈值积分补贴({$integralPercent}%)-池{$poolId}",
                     'create_time' => time(),
                     'update_time' => time()
                 ];

@@ -91,15 +91,21 @@ class DistributeDividends extends BaseController
             Log::info("团长数量: " . count($teamLeaders));
             Log::info("有积分用户数量: " . count($integralUsers));
             
-            // 计算30%团长补贴
-            $teamLeaderPool = $totalHandlingFee * 0.3;
+            // 从配置文件获取分配比例
+            $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
+            $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
+            $teamLeaderPercent = intval($teamLeaderRate * 100);
+            $integralPercent = intval($integralRate * 100);
+            
+            // 计算团长补贴
+            $teamLeaderPool = $totalHandlingFee * $teamLeaderRate;
             $teamLeaderCount = count($teamLeaders);
             $dividendPerLeader = $teamLeaderCount > 0 ? $teamLeaderPool / $teamLeaderCount : 0;
             
-            Log::info("\n30%团长补贴池: {$teamLeaderPool}");
+            Log::info("\n{$teamLeaderPercent}%团长补贴池: {$teamLeaderPool}");
             Log::info("每个团长补贴: {$dividendPerLeader}");
             
-            // 为团长分配30%补贴
+            // 为团长分配补贴
             $teamLeaderResults = [];
             foreach ($teamLeaders as $leader) {
                 $dividendAmount = round($dividendPerLeader, 2);
@@ -118,11 +124,11 @@ class DistributeDividends extends BaseController
                 Log::info("团长 {$leader['nickname']}({$leader['uid']}) 补贴: {$dividendAmount}");
             }
             
-            // 计算70%积分补贴
-            $integralPool = $totalHandlingFee * 0.7;
+            // 计算积分补贴
+            $integralPool = $totalHandlingFee * $integralRate;
             $integralUserResults = [];
             
-            Log::info("\n70%积分补贴池: {$integralPool}");
+            Log::info("\n{$integralPercent}%积分补贴池: {$integralPool}");
             
             if (count($integralUsers) > 0) {
                 // 计算总积分权重
@@ -138,8 +144,8 @@ class DistributeDividends extends BaseController
             Log::info("\n补贴任务完成:");
             Log::info("- 补贴日期: {$yesterday}");
             Log::info("- 总手续费: {$totalHandlingFee}");
-            Log::info("- 团长补贴池(30%): {$teamLeaderPool}");
-            Log::info("- 积分补贴池(70%): {$integralPool}");
+            Log::info("- 团长补贴池({$teamLeaderPercent}%): {$teamLeaderPool}");
+            Log::info("- 积分补贴池({$integralPercent}%): {$integralPool}");
             Log::info("- 团长补贴人数: " . count($teamLeaderResults));
             Log::info("- 积分补贴人数: " . count($integralUserResults));
             
@@ -286,6 +292,12 @@ class DistributeDividends extends BaseController
         $integralUserResults
     ) {
         try {
+            // 从配置文件获取分配比例用于备注
+            $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
+            $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
+            $teamLeaderPercent = intval($teamLeaderRate * 100);
+            $integralPercent = intval($integralRate * 100);
+            
             // 开启事务
             Db::startTrans();
             
@@ -328,7 +340,7 @@ class DistributeDividends extends BaseController
                     'weight_percent' => 0,
                     'dividend_amount' => $leader['dividend_amount'],
                     'status' => 1,
-                    'remark' => '团长补贴(30%)',
+                    'remark' => "团长补贴({$teamLeaderPercent}%)",
                     'create_time' => time(),
                     'update_time' => time()
                 ];
@@ -349,7 +361,7 @@ class DistributeDividends extends BaseController
                     'weight_percent' => $user['weight_percent'],
                     'dividend_amount' => $user['dividend_amount'],
                     'status' => 1,
-                    'remark' => '积分补贴(70%)',
+                    'remark' => "积分补贴({$integralPercent}%)",
                     'create_time' => time(),
                     'update_time' => time()
                 ];
