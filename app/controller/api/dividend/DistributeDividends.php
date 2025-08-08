@@ -193,13 +193,12 @@ class DistributeDividends extends BaseController
             $user = $userModel->where('phone', $phone)->find();
             if ($user) {
                 $newBrokeragePrice = $user['brokerage_price'] + $dividendAmount;
-                $userModel->where('id', $user['uid'])->update([
+                $userModel->where('uid', $user['uid'])->update([
                     'brokerage_price' => $newBrokeragePrice,
-                    'update_time' => time()
                 ]);
             }
         } catch (\Exception $e) {
-            Log::error("更新用户补贴失败 - 手机号: {$phone}, 金额: {$dividendAmount}", ['error' => $e->getMessage()]);
+            Log::error("更新用户补贴失败 - 手机号: {$phone}, 金额: {$dividendAmount}.错误信息:{$e->getMessage()}");
         }
     }
     
