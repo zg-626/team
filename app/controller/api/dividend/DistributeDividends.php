@@ -187,7 +187,7 @@ class DistributeDividends extends BaseController
             $user = $userModel->where('phone', $phone)->find();
             if ($user) {
                 $newBrokeragePrice = $user['brokerage_price'] + $dividendAmount;
-                $userModel->where('id', $user['id'])->update([
+                $userModel->where('id', $user['uid'])->update([
                     'brokerage_price' => $newBrokeragePrice,
                     'update_time' => time()
                 ]);

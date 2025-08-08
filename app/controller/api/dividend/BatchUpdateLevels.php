@@ -136,11 +136,11 @@ class BatchUpdateLevels extends BaseController
         $this->performanceStats['cache_misses']++;
         $this->performanceStats['query_count']++;
         
-        $consumerUserIds = Db::name('store_order')
+        $consumerUserIds = $orderModel
             ->where('paid', 1)->where('offline_audit_status', 1)
             ->where('mer_id', 980)
-            ->group('uid')
-            ->select();
+            ->distinct(true)
+            ->column('uid');
         
         // 缓存1小时
         Cache::set($cacheKey, $consumerUserIds, 3600);
@@ -192,7 +192,7 @@ class BatchUpdateLevels extends BaseController
                 foreach ($users as $user) {
                     try {
                         $result = $this->calculateAndUpdateUserLevel(
-                            $user['id'], 
+                            $user['uid'], 
                             $userModel, 
                             $orderModel,
                             $isDryRun
@@ -203,14 +203,14 @@ class BatchUpdateLevels extends BaseController
                             $totalUpdated++;
                             $levelChanges[] = $result;
                             Log::info(
-                                "用户 {$user['nickname']}({$user['id']}) 级别更新: " .
+                                "用户 {$user['nickname']}({$user['uid']}) 级别更新: " .
                                 "{$result['old_level']} -> {$result['new_level']}"
                             );
                         }
                         
                     } catch (\Exception $e) {
-                        $errors[] = "用户ID {$user['id']}: " . $e->getMessage();
-                        Log::error("批量级别更新 - 用户 {$user['id']} 处理失败", [
+                        $errors[] = "用户ID {$user['uid']}: " . $e->getMessage();
+                        Log::error("批量级别更新 - 用户 {$user['uid']} 处理失败", [
                             'error' => $e->getMessage(),
                             'trace' => $e->getTraceAsString()
                         ]);
@@ -226,7 +226,7 @@ class BatchUpdateLevels extends BaseController
                 if (!$isDryRun) {
                     Db::rollback();
                 }
-                $errors[] = "批次处理失败: " . $e->getMessage();
+                $errors[] = "批次处理失败: " . $e->getMessage().$e->getLine();
                 Log::error("批量级别更新 - 批次处理失败", [
                     'offset' => $offset,
                     'batch_size' => $batchSize,
@@ -265,9 +265,8 @@ class BatchUpdateLevels extends BaseController
         $this->performanceStats['query_count']++;
         
         return $userModel
-            ->field('id,phone,nickname,team_level')
-            ->whereIn('id', $userIds)
-            ->where('is_disable', 0)
+            ->field('uid,phone,nickname,team_level')
+            ->whereIn('uid', $userIds)
             ->select()
             ->toArray();
     }
@@ -430,7 +429,7 @@ class BatchUpdateLevels extends BaseController
             if (!$isDryRun) {
                 // 只更新系统用户表的team_level字段
                 $this->performanceStats['query_count']++;
-                $userModel->where('id', $userId)->update([
+                $userModel->where('uid', $userId)->update([
                     'team_level' => $newLevel,
                     'update_time' => time()
                 ]);
@@ -468,7 +467,7 @@ class BatchUpdateLevels extends BaseController
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
-            $user = $userModel->where('id', $userId)->find();
+            $user = $userModel->where('uid', $userId)->find();
             if ($user) {
                 $user = $user->toArray();
                 Cache::set($cacheKey, $user, 1800); // 缓存30分钟
@@ -621,7 +620,7 @@ class BatchUpdateLevels extends BaseController
             // 获取当前级别的下线用户
             $nextLevelUsers = $userModel
                 ->whereIn('spread_uid', $currentLevelIds)
-                ->column('id');
+                ->column('uid');
             
             if (!empty($nextLevelUsers)) {
                 $memberIds = array_merge($memberIds, $nextLevelUsers);
@@ -662,7 +661,7 @@ class BatchUpdateLevels extends BaseController
         
         foreach ($batches as $batch) {
             $users = $userModel
-                ->whereIn('id', $batch)
+                ->whereIn('uid', $batch)
                 ->field('team_level')
                 ->select()
                 ->toArray();
