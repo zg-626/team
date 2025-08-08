@@ -402,8 +402,27 @@ class BatchUpdateLevels extends BaseController
     {
         // 获取用户信息（带缓存）
         $user = $this->getUserWithCache($userId, $userModel);
-        if (!$user) {
+        
+        // 添加调试日志
+        Log::info("calculateAndUpdateUserLevel - 用户ID: {$userId}");
+        Log::info("calculateAndUpdateUserLevel - 用户数据类型: " . gettype($user));
+        Log::info("calculateAndUpdateUserLevel - 用户数据内容: " . json_encode($user));
+        Log::info("calculateAndUpdateUserLevel - 用户数据是否为空: " . (empty($user) ? '是' : '否'));
+        Log::info("calculateAndUpdateUserLevel - 用户数据布尔判断: " . ($user ? '真' : '假'));
+        
+        // 修正用户存在性判断逻辑
+        if (empty($user) || !is_array($user) && !is_object($user)) {
             throw new \Exception('用户不存在');
+        }
+        
+        // 如果是数组但没有uid字段，也认为用户不存在
+        if (is_array($user) && !isset($user['uid'])) {
+            throw new \Exception('用户数据无效');
+        }
+        
+        // 如果是对象但没有uid属性，也认为用户不存在
+        if (is_object($user) && !isset($user->uid)) {
+            throw new \Exception('用户数据无效');
         }
         
         // 获取团队所有成员ID（带缓存优化）
@@ -463,17 +482,90 @@ class BatchUpdateLevels extends BaseController
         $cacheKey = $this->cachePrefix . "user_{$userId}";
         $user = Cache::get($cacheKey);
         
-        if ($user === false) {
+        if ($user === false || $user === null) {
+            Log::info("getUserWithCache - 缓存未命中或为空，开始查询用户ID: {$userId}");
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
-            $user = $userModel->where('uid', $userId)->find();
-            if ($user) {
-                $user = $user->toArray();
-                Cache::set($cacheKey, $user, 1800); // 缓存30分钟
+            // 添加调试日志
+            Log::info("getUserWithCache - 查询用户ID: {$userId}");
+            
+            // 尝试多种查询方式
+            try {
+                // 方式1: 使用User模型查询（强制指定表名）
+                 $user = $userModel->table('eb_user')->where('uid', $userId)->find();
+                Log::info("getUserWithCache - User模型查询结果类型: " . gettype($user));
+                Log::info("getUserWithCache - User模型查询结果是否为空: " . (empty($user) ? '是' : '否'));
+                
+                if (!$user) {
+                    // 方式2: 直接使用Db查询
+                    Log::info("getUserWithCache - User模型查询失败，尝试Db查询");
+                    $dbResult = Db::table('eb_user')->where('uid', $userId)->find();
+                    Log::info("getUserWithCache - Db查询结果: " . ($dbResult ? json_encode($dbResult) : '空'));
+                    
+                    if ($dbResult) {
+                        // 如果Db查询成功，直接返回数组格式
+                        $user = $dbResult;
+                        Log::info("getUserWithCache - 使用Db查询结果");
+                    }
+                }
+                
+                if ($user) {
+                    // 检查是否为模型对象，需要转换为数组
+                    if (is_object($user)) {
+                        Log::info("getUserWithCache - 对象类名: " . get_class($user));
+                        $user = $user->toArray();
+                        Log::info("getUserWithCache - toArray()后数据: " . json_encode($user));
+                    } else {
+                        Log::info("getUserWithCache - 数组数据: " . json_encode($user));
+                    }
+                    
+                    // 验证用户数据的有效性
+                    if (is_array($user) && isset($user['uid']) && $user['uid'] == $userId) {
+                        Cache::set($cacheKey, $user, 1800); // 缓存30分钟
+                        Log::info("getUserWithCache - 用户数据已缓存");
+                    } else {
+                        Log::warning("getUserWithCache - 用户数据无效，不进行缓存");
+                        $user = false;
+                    }
+                } else {
+                    Log::warning("getUserWithCache - 用户ID {$userId} 所有查询方式都失败");
+                    
+                    // 设置一个短期的"用户不存在"缓存，避免重复查询
+                    Cache::set($cacheKey, false, 300); // 缓存5分钟
+                    
+                    // 最后尝试: 检查表是否存在以及字段是否正确
+                    try {
+                        $tableExists = Db::query("SHOW TABLES LIKE 'eb_user'");
+                        Log::info("getUserWithCache - 表eb_user是否存在: " . (empty($tableExists) ? '否' : '是'));
+                        
+                        if (!empty($tableExists)) {
+                            $fieldExists = Db::query("SHOW COLUMNS FROM eb_user LIKE 'uid'");
+                            Log::info("getUserWithCache - 字段uid是否存在: " . (empty($fieldExists) ? '否' : '是'));
+                            
+                            // 检查是否有任何uid字段的记录
+                            $anyRecord = Db::table('eb_user')->limit(1)->find();
+                            Log::info("getUserWithCache - 表中是否有任何记录: " . ($anyRecord ? '是' : '否'));
+                        }
+                    } catch (\Exception $e) {
+                        Log::error("getUserWithCache - 检查表结构时出错: " . $e->getMessage());
+                    }
+                    
+                    return false;
+                }
+                
+            } catch (\Exception $e) {
+                Log::error("getUserWithCache - 查询用户时出错: " . $e->getMessage());
+                Log::error("getUserWithCache - 错误文件: " . $e->getFile() . " 行号: " . $e->getLine());
+                return false;
             }
         } else {
             $this->performanceStats['cache_hits']++;
+            Log::info("getUserWithCache - 从缓存获取用户ID: {$userId}");
+            Log::info("getUserWithCache - 缓存数据类型: " . gettype($user));
+            Log::info("getUserWithCache - 缓存数据内容: " . json_encode($user));
+            Log::info("getUserWithCache - 缓存数据是否为空: " . (empty($user) ? '是' : '否'));
+            Log::info("getUserWithCache - 缓存数据布尔判断: " . ($user ? '真' : '假'));
         }
         
         return $user;
@@ -490,12 +582,25 @@ class BatchUpdateLevels extends BaseController
         $cacheKey = $this->cachePrefix . "team_members_{$userId}";
         $teamMemberIds = Cache::get($cacheKey);
         
-        if ($teamMemberIds === false) {
+        if ($teamMemberIds === false || $teamMemberIds === null) {
             $this->performanceStats['cache_misses']++;
             $teamMemberIds = $this->getTeamMemberIds($userId, $userModel);
+            
+            // 确保返回值是数组类型
+            if (!is_array($teamMemberIds)) {
+                Log::warning("getTeamMemberIds返回非数组类型: " . gettype($teamMemberIds) . ", 用户ID: {$userId}");
+                $teamMemberIds = [$userId]; // 默认只包含自己
+            }
+            
             Cache::set($cacheKey, $teamMemberIds, 1800); // 缓存30分钟
         } else {
             $this->performanceStats['cache_hits']++;
+            
+            // 验证缓存数据类型
+            if (!is_array($teamMemberIds)) {
+                Log::warning("缓存中的团队成员ID不是数组类型: " . gettype($teamMemberIds) . ", 用户ID: {$userId}");
+                $teamMemberIds = [$userId]; // 默认只包含自己
+            }
         }
         
         return $teamMemberIds;
@@ -611,27 +716,35 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamMemberIds($userId, $userModel, $maxLevel = 2)
     {
-        $memberIds = [$userId]; // 包含自己
-        $currentLevelIds = [$userId];
-        $level = 1;
-        
-        // 递归获取指定级别的下线
-        while (($maxLevel == 0 || $level <= $maxLevel) && !empty($currentLevelIds)) {
-            // 获取当前级别的下线用户
-            $nextLevelUsers = $userModel
-                ->whereIn('spread_uid', $currentLevelIds)
-                ->column('uid');
+        try {
+            $memberIds = [$userId]; // 包含自己
+            $currentLevelIds = [$userId];
+            $level = 1;
             
-            if (!empty($nextLevelUsers)) {
-                $memberIds = array_merge($memberIds, $nextLevelUsers);
-                $currentLevelIds = $nextLevelUsers; // 为下一级做准备
-                $level++;
-            } else {
-                break; // 没有下级了，提前结束
+            // 递归获取指定级别的下线
+            while (($maxLevel == 0 || $level <= $maxLevel) && !empty($currentLevelIds)) {
+                // 获取当前级别的下线用户
+                $nextLevelUsers = $userModel
+                    ->whereIn('spread_uid', $currentLevelIds)
+                    ->column('uid');
+                
+                if (!empty($nextLevelUsers) && is_array($nextLevelUsers)) {
+                    $memberIds = array_merge($memberIds, $nextLevelUsers);
+                    $currentLevelIds = $nextLevelUsers; // 为下一级做准备
+                    $level++;
+                } else {
+                    break; // 没有下级了，提前结束
+                }
             }
+            
+            $result = array_unique($memberIds);
+            Log::info("getTeamMemberIds成功，用户ID: {$userId}, 团队成员数: " . count($result));
+            return $result;
+            
+        } catch (\Exception $e) {
+            Log::error("getTeamMemberIds异常，用户ID: {$userId}, 错误: " . $e->getMessage());
+            return [$userId]; // 异常时只返回自己
         }
-        
-        return array_unique($memberIds);
     }
     
     /**
