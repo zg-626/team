@@ -73,9 +73,9 @@ class DistributeDividends extends BaseController
             
             // 获取所有团长（V1及以上级别的用户）
             $teamLeaders = $userDianModel
-                ->where('brokerage_level', '>=', 1)
+                ->where('team_level', '>=', 1)
                 ->where('status', 1)
-                ->field('uid,nickname,brokerage_level,phone')
+                ->field('uid,nickname,team_level,phone')
                 ->select()
                 ->toArray();
             
@@ -110,7 +110,7 @@ class DistributeDividends extends BaseController
                 $teamLeaderResults[] = [
                     'uid' => $leader['uid'],
                     'nickname' => $leader['nickname'],
-                    'level' => $leader['brokerage_level'],
+                    'level' => $leader['team_level'],
                     'phone' => $leader['phone'],
                     'dividend_amount' => $dividendAmount
                 ];
