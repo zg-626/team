@@ -81,16 +81,26 @@ class DistributeDividends extends BaseController
                 ->toArray();
             
             // 获取所有有积分的用户（用于70%补贴）
-            $integralUsers = $userDianModel
+            /*$integralUsers = $userDianModel
                 ->where('integral', '>', 0)
                 ->where('status', 1)
                 ->field('uid,nickname,integral,phone')
                 ->order('integral', 'desc')
                 ->select()
+                ->toArray();*/
+            
+            // 获取所有有权益值的用户（用于70%补贴）
+            $equityUsers = $userDianModel
+                ->where('equity_value', '>', 0)
+                ->where('status', 1)
+                ->field('uid,nickname,equity_value,phone')
+                ->order('equity_value', 'desc')
+                ->select()
                 ->toArray();
             
             Log::info("团长数量: " . count($teamLeaders));
-            Log::info("有积分用户数量: " . count($integralUsers));
+            Log::info("有权益值用户数量: " . count($equityUsers));
+            //Log::info("有积分用户数量: " . count($integralUsers));
             
             // 计算分红基数（总手续费的20%）
             $dividendBase = $totalHandlingFee * 0.20;
@@ -141,15 +151,25 @@ class DistributeDividends extends BaseController
             $integralPool = $dividendBase * $integralRate;
             $integralUserResults = [];
             
-            Log::info("\n{$integralPercent}%积分补贴池: {$integralPool}");
+            Log::info("\n{$integralPercent}%权益补贴池: {$integralPool}");
             
-            if (count($integralUsers) > 0) {
+            /*if (count($integralUsers) > 0) {
                 // 计算总积分权重
                 $totalIntegral = array_sum(array_column($integralUsers, 'integral'));
                 
                 if ($totalIntegral > 0) {
                     // 使用红包算法分配积分补贴
                     $integralUserResults = $this->distributeIntegralDividend($integralUsers, $integralPool, $totalIntegral, $userDianModel);
+                }
+            }*/
+
+            if (count($equityUsers) > 0) {
+                // 计算总权益值
+                $totalEquityValue = array_sum(array_column($equityUsers, 'equity_value'));
+
+                if ($totalEquityValue > 0) {
+                    // 使用权益值比例分配补贴
+                    $integralUserResults = $this->distributeEquityDividend($equityUsers, $integralPool, $totalEquityValue, $userDianModel);
                 }
             }
             
@@ -161,9 +181,9 @@ class DistributeDividends extends BaseController
             Log::info("- 团长补贴池({$teamLeaderPercent}%): {$teamLeaderPool}");
             Log::info("- 团队分红已分配: {$teamDividendResult['distributed_amount']}");
             Log::info("- 团长补贴池剩余: {$remainingTeamLeaderPool}");
-            Log::info("- 积分补贴池({$integralPercent}%): {$integralPool}");
+            Log::info("- 权益补贴池({$integralPercent}%): {$integralPool}");
             Log::info("- 团长补贴人数: " . count($teamLeaderResults));
-            Log::info("- 积分补贴人数: " . count($integralUserResults));
+            Log::info("- 权益补贴人数: " . count($integralUserResults));
             
             // 保存补贴统计数据到数据库
             $this->saveDividendData(
@@ -191,7 +211,7 @@ class DistributeDividends extends BaseController
                 'remaining_team_leader_pool' => $remainingTeamLeaderPool,
                 'integral_pool' => $integralPool,
                 'team_leader_count' => count($teamLeaderResults),
-                'integral_user_count' => count($integralUserResults),
+                //'integral_user_count' => count($integralUserResults),
                 'team_dividend_count' => count($teamDividendResult['records'])
             ]);
             
@@ -322,6 +342,52 @@ class DistributeDividends extends BaseController
             'remaining_amount' => $remainingAmount,
             'records' => $teamDividendRecords
         ];
+    }
+
+    /**
+     * 权益值补贴算法
+     * 根据用户权益值权重分配补贴金额
+     */
+    private function distributeEquityDividend($users, $totalAmount, $totalEquityValue, $userModel)
+    {
+        $results = [];
+        $distributedAmount = 0;
+
+        Log::info("\n开始权益值补贴分配:");
+        Log::info("- 补贴池总额: {$totalAmount}");
+        Log::info("- 总权益值: {$totalEquityValue}");
+        Log::info("- 用户数量: " . count($users));
+
+        foreach ($users as $user) {
+            // 计算用户权益值占比
+            $equityRatio = $user['equity_value'] / $totalEquityValue;
+
+            // 计算应得补贴金额
+            $dividendAmount = $totalAmount * $equityRatio;
+            $dividendAmount = round($dividendAmount, 2);
+
+            // 更新用户的coupon_amount字段
+            $this->updateUserCouponAmount($user['phone'], $dividendAmount, $userModel);
+
+            $results[] = [
+                'uid' => $user['uid'],
+                'nickname' => $user['nickname'],
+                'equity_value' => $user['equity_value'],
+                'phone' => $user['phone'],
+                'dividend_amount' => $dividendAmount,
+                'equity_ratio' => round($equityRatio * 100, 4) // 权益占比百分比
+            ];
+
+            Log::info("权益用户 {$user['nickname']}({$user['uid']}) 权益值: {$user['equity_value']}, 占比: " . round($equityRatio * 100, 4) . "%, 补贴: {$dividendAmount}");
+
+            $distributedAmount += $dividendAmount;
+        }
+
+        Log::info("\n权益补贴分配完成:");
+        Log::info("- 实际分配总额: {$distributedAmount}");
+        Log::info("- 分配精度差异: " . round($totalAmount - $distributedAmount, 2));
+
+        return $results;
     }
     
     /**
@@ -499,8 +565,8 @@ class DistributeDividends extends BaseController
                     'update_time' => time()
                 ];
             }
-            
-            // 处理积分补贴记录
+
+            // 处理权益补贴记录
             foreach ($integralUserResults as $user) {
                 $userRecords[] = [
                     'statistics_id' => $statisticsId,
@@ -511,11 +577,11 @@ class DistributeDividends extends BaseController
                     'nickname' => $user['nickname'],
                     'dividend_type' => UserDividendRecord::DIVIDEND_TYPE_INTEGRAL,
                     'user_level' => 0,
-                    'user_integral' => $user['integral'],
-                    'weight_percent' => $user['weight_percent'],
+                    'user_integral' => $user['equity_value'], // 存储权益值
+                    'weight_percent' => $user['equity_ratio'], // 存储权益占比
                     'dividend_amount' => $user['dividend_amount'],
                     'status' => 1,
-                    'remark' => "积分补贴({$integralPercent}%)",
+                    'remark' => "权益补贴({$integralPercent}%)",
                     'create_time' => time(),
                     'update_time' => time()
                 ];
