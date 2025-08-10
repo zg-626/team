@@ -1,6 +1,6 @@
 <?php
 // +----------------------------------------------------------------------
-// | 分销团队级别统计系统 - 补贴任务
+// | 分销团队级别统计系统 - 补贴任务(没有15%增长的限制，每天执行)
 // +----------------------------------------------------------------------
 
 namespace app\controller\api\dividend;
@@ -92,18 +92,30 @@ class DistributeDividends extends BaseController
             Log::info("团长数量: " . count($teamLeaders));
             Log::info("有积分用户数量: " . count($integralUsers));
             
+            // 计算分红基数（总手续费的20%）
+            $dividendBase = $totalHandlingFee * 0.20;
+            Log::info("分红基数(总手续费20%): {$dividendBase}");
+            
             // 从配置文件获取分配比例
             $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
             $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
-            $teamLeaderPercent = intval($teamLeaderRate * 100);
-            $integralPercent = intval($integralRate * 100);
+            $teamLeaderPercent = (int)($teamLeaderRate * 100);
+            $integralPercent = (int)($integralRate * 100);
             
-            // 计算团长补贴
-            $teamLeaderPool = $totalHandlingFee * $teamLeaderRate;
-            $teamLeaderCount = count($teamLeaders);
-            $dividendPerLeader = $teamLeaderCount > 0 ? $teamLeaderPool / $teamLeaderCount : 0;
+            // 计算团长补贴池（基数的30%）
+            $teamLeaderPool = $dividendBase * $teamLeaderRate;
+            
+            // 执行团队分红逻辑
+            $teamDividendResult = $this->executeTeamDividend($teamLeaderPool, $userDianModel);
+            $remainingTeamLeaderPool = $teamDividendResult['remaining_amount'];
             
             Log::info("\n{$teamLeaderPercent}%团长补贴池: {$teamLeaderPool}");
+            Log::info("团队分红已分配: {$teamDividendResult['distributed_amount']}");
+            Log::info("团长补贴池剩余: {$remainingTeamLeaderPool}");
+            
+            // 剩余团长补贴平分给所有团长
+            $teamLeaderCount = count($teamLeaders);
+            $dividendPerLeader = $teamLeaderCount > 0 ? $remainingTeamLeaderPool / $teamLeaderCount : 0;
             Log::info("每个团长补贴: {$dividendPerLeader}");
             
             // 为团长分配补贴
@@ -125,8 +137,8 @@ class DistributeDividends extends BaseController
                 Log::info("团长 {$leader['nickname']}({$leader['uid']}) 补贴: {$dividendAmount}");
             }
             
-            // 计算积分补贴
-            $integralPool = $totalHandlingFee * $integralRate;
+            // 计算积分补贴池（基数的70%）
+            $integralPool = $dividendBase * $integralRate;
             $integralUserResults = [];
             
             Log::info("\n{$integralPercent}%积分补贴池: {$integralPool}");
@@ -145,7 +157,10 @@ class DistributeDividends extends BaseController
             Log::info("\n补贴任务完成:");
             Log::info("- 补贴日期: {$yesterday}");
             Log::info("- 总手续费: {$totalHandlingFee}");
+            Log::info("- 分红基数(20%): {$dividendBase}");
             Log::info("- 团长补贴池({$teamLeaderPercent}%): {$teamLeaderPool}");
+            Log::info("- 团队分红已分配: {$teamDividendResult['distributed_amount']}");
+            Log::info("- 团长补贴池剩余: {$remainingTeamLeaderPool}");
             Log::info("- 积分补贴池({$integralPercent}%): {$integralPool}");
             Log::info("- 团长补贴人数: " . count($teamLeaderResults));
             Log::info("- 积分补贴人数: " . count($integralUserResults));
@@ -157,20 +172,27 @@ class DistributeDividends extends BaseController
                 $yesterday,
                 980, // 商户ID
                 $totalHandlingFee,
+                $dividendBase,
                 $teamLeaderPool,
+                $remainingTeamLeaderPool,
                 $integralPool,
                 $teamLeaderResults,
-                $integralUserResults
+                $integralUserResults,
+                $teamDividendResult
             );
             
             // 记录到日志
             Log::info('补贴任务完成', [
                 'date' => $yesterday,
                 'total_handling_fee' => $totalHandlingFee,
+                'dividend_base' => $dividendBase,
                 'team_leader_pool' => $teamLeaderPool,
+                'team_dividend_distributed' => $teamDividendResult['distributed_amount'],
+                'remaining_team_leader_pool' => $remainingTeamLeaderPool,
                 'integral_pool' => $integralPool,
                 'team_leader_count' => count($teamLeaderResults),
-                'integral_user_count' => count($integralUserResults)
+                'integral_user_count' => count($integralUserResults),
+                'team_dividend_count' => count($teamDividendResult['records'])
             ]);
             
             Log::info('补贴任务执行完成!');
@@ -212,6 +234,94 @@ class DistributeDividends extends BaseController
         } catch (\Exception $e) {
             Log::error("更新用户抵用券失败 - 手机号: {$phone}, 金额: {$dividendAmount}.错误信息:{$e->getMessage()}");
         }
+    }
+    
+    /**
+     * 执行团队分红逻辑
+     * 按级别递进分配，每次分配5%，最多分4次
+     */
+    private function executeTeamDividend($teamLeaderPool, $userModel)
+    {
+        $distributedAmount = 0;
+        $teamDividendRecords = [];
+        $distributionRate = 0.05; // 每次分配5%
+        $maxDistributions = 4; // 最多分配4次
+        
+        Log::info("\n开始执行团队分红逻辑:");
+        
+        for ($level = 1; $level <= $maxDistributions; $level++) {
+            // 计算当前分配金额
+            $currentDistributionAmount = $teamLeaderPool * $distributionRate;
+            
+            // 查询当前级别和下一级别的用户
+            $currentLevelUsers = $userModel
+                ->where('group_id', $level)
+                ->where('status', 1)
+                ->field('uid,nickname,group_id,phone')
+                ->select()
+                ->toArray();
+                
+            $nextLevelUsers = [];
+            if ($level < 5) { // 确保不超过最大级别
+                $nextLevelUsers = $userModel
+                    ->where('group_id', $level + 1)
+                    ->where('status', 1)
+                    ->field('uid,nickname,group_id,phone')
+                    ->select()
+                    ->toArray();
+            }
+            
+            // 合并当前级别和下一级别用户
+            $eligibleUsers = array_merge($currentLevelUsers, $nextLevelUsers);
+            $userCount = count($eligibleUsers);
+            
+            if ($userCount > 0) {
+                $dividendPerUser = $currentDistributionAmount / $userCount;
+                
+                Log::info("第{$level}轮分红 - {$level}级和" . ($level + 1) . "级用户:");
+                Log::info("- 分配金额: {$currentDistributionAmount}");
+                Log::info("- 符合条件用户数: {$userCount}");
+                Log::info("- 每人分红: {$dividendPerUser}");
+                
+                // 为符合条件的用户分配分红
+                foreach ($eligibleUsers as $user) {
+                    $dividendAmount = round($dividendPerUser, 2);
+                    
+                    // 更新用户的coupon_amount字段
+                    $this->updateUserCouponAmount($user['phone'], $dividendAmount, $userModel);
+                    
+                    $teamDividendRecords[] = [
+                        'uid' => $user['uid'],
+                        'nickname' => $user['nickname'],
+                        'level' => $user['group_id'],
+                        'phone' => $user['phone'],
+                        'dividend_amount' => $dividendAmount,
+                        'distribution_round' => $level,
+                        'distribution_type' => "团队分红第{$level}轮"
+                    ];
+                    
+                    Log::info("  用户 {$user['nickname']}({$user['uid']}) {$user['group_id']}级 分红: {$dividendAmount}");
+                }
+                
+                $distributedAmount += $currentDistributionAmount;
+            } else {
+                Log::info("第{$level}轮分红 - 无符合条件用户，跳过");
+            }
+        }
+        
+        $remainingAmount = $teamLeaderPool - $distributedAmount;
+        
+        Log::info("\n团队分红完成:");
+        Log::info("- 总分红池: {$teamLeaderPool}");
+        Log::info("- 已分配: {$distributedAmount}");
+        Log::info("- 剩余: {$remainingAmount}");
+        Log::info("- 分红记录数: " . count($teamDividendRecords));
+        
+        return [
+            'distributed_amount' => $distributedAmount,
+            'remaining_amount' => $remainingAmount,
+            'records' => $teamDividendRecords
+        ];
     }
     
     /**
@@ -286,10 +396,13 @@ class DistributeDividends extends BaseController
      * @param string $dividendDate 补贴日期
      * @param int $merId 商户ID
      * @param float $totalHandlingFee 总手续费
+     * @param float $dividendBase 分红基数
      * @param float $teamLeaderPool 团长补贴池
+     * @param float $remainingTeamLeaderPool 剩余团长补贴池
      * @param float $integralPool 积分补贴池
      * @param array $teamLeaderResults 团长补贴结果
      * @param array $integralUserResults 积分补贴结果
+     * @param array $teamDividendResult 团队分红结果
      */
     private function saveDividendData(
         $dividendStatisticsModel,
@@ -297,10 +410,13 @@ class DistributeDividends extends BaseController
         $dividendDate,
         $merId,
         $totalHandlingFee,
+        $dividendBase,
         $teamLeaderPool,
+        $remainingTeamLeaderPool,
         $integralPool,
         $teamLeaderResults,
-        $integralUserResults
+        $integralUserResults,
+        $teamDividendResult
     ) {
         try {
             // 从配置文件获取分配比例用于备注
@@ -313,21 +429,27 @@ class DistributeDividends extends BaseController
             Db::startTrans();
             
             // 计算实际补贴总额
-            $totalDividendAmount = array_sum(array_column($teamLeaderResults, 'dividend_amount')) + 
-                                 array_sum(array_column($integralUserResults, 'dividend_amount'));
+            $teamDividendAmount = array_sum(array_column($teamDividendResult['records'], 'dividend_amount'));
+            $teamLeaderAmount = array_sum(array_column($teamLeaderResults, 'dividend_amount'));
+            $integralAmount = array_sum(array_column($integralUserResults, 'dividend_amount'));
+            $totalDividendAmount = $teamDividendAmount + $teamLeaderAmount + $integralAmount;
             
             // 创建补贴统计记录
             $statisticsData = [
                 'dividend_date' => $dividendDate,
                 'mer_id' => $merId,
                 'total_handling_fee' => $totalHandlingFee,
+                'dividend_base' => $dividendBase,
                 'team_leader_pool' => $teamLeaderPool,
+                'team_dividend_amount' => $teamDividendResult['distributed_amount'],
+                'remaining_team_leader_pool' => $remainingTeamLeaderPool,
                 'integral_pool' => $integralPool,
                 'team_leader_count' => count($teamLeaderResults),
                 'integral_user_count' => count($integralUserResults),
+                'team_dividend_count' => count($teamDividendResult['records']),
                 'total_dividend_amount' => $totalDividendAmount,
                 'status' => 1,
-                'remark' => '系统自动补贴'
+                'remark' => '系统自动补贴(含团队分红)'
             ];
             
             $statisticsId = $dividendStatisticsModel->createRecord($statisticsData);
@@ -335,6 +457,27 @@ class DistributeDividends extends BaseController
             
             // 准备用户补贴记录数据
             $userRecords = [];
+            
+            // 处理团队分红记录
+            foreach ($teamDividendResult['records'] as $teamRecord) {
+                $userRecords[] = [
+                    'statistics_id' => $statisticsId,
+                    'dividend_date' => $dividendDate,
+                    'mer_id' => $merId,
+                    'uid' => $teamRecord['uid'],
+                    'phone' => $teamRecord['phone'],
+                    'nickname' => $teamRecord['nickname'],
+                    'dividend_type' => 'team_dividend',
+                    'user_level' => $teamRecord['level'],
+                    'user_integral' => 0,
+                    'weight_percent' => 0,
+                    'dividend_amount' => $teamRecord['dividend_amount'],
+                    'status' => 1,
+                    'remark' => $teamRecord['distribution_type'],
+                    'create_time' => time(),
+                    'update_time' => time()
+                ];
+            }
             
             // 处理团长补贴记录
             foreach ($teamLeaderResults as $leader) {
@@ -351,7 +494,7 @@ class DistributeDividends extends BaseController
                     'weight_percent' => 0,
                     'dividend_amount' => $leader['dividend_amount'],
                     'status' => 1,
-                    'remark' => "团长补贴({$teamLeaderPercent}%)",
+                    'remark' => "团长补贴({$teamLeaderPercent}%剩余)",
                     'create_time' => time(),
                     'update_time' => time()
                 ];
@@ -390,7 +533,10 @@ class DistributeDividends extends BaseController
             
             return [
                 'total_handling_fee' => $totalHandlingFee,
+                'dividend_base' => $dividendBase,
                 'dividend_date' => $dividendDate,
+                'team_dividend_amount' => $teamDividendResult['distributed_amount'],
+                'remaining_team_leader_pool' => $remainingTeamLeaderPool,
                 'user_records_count' => count($userRecords),
                 'message' => '补贴数据保存成功'
             ];
