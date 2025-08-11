@@ -123,7 +123,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getConsumerUserIds($orderModel, $forceUpdate = false)
     {
-        $cacheKey = $this->cachePrefix . 'consumer_user_ids';
+        /*$cacheKey = $this->cachePrefix . 'consumer_user_ids';
         
         if (!$forceUpdate) {
             $cachedIds = Cache::get($cacheKey);
@@ -134,7 +134,7 @@ class BatchUpdateLevels extends BaseController
         }
         
         $this->performanceStats['cache_misses']++;
-        $this->performanceStats['query_count']++;
+        $this->performanceStats['query_count']++;*/
         
         $consumerUserIds = $orderModel
             ->where('paid', 1)->where('offline_audit_status', 1)
@@ -143,7 +143,7 @@ class BatchUpdateLevels extends BaseController
             ->column('uid');
         
         // 缓存1小时
-        Cache::set($cacheKey, $consumerUserIds, 3600);
+        //Cache::set($cacheKey, $consumerUserIds, 3600);
         
         return $consumerUserIds;
     }
@@ -449,8 +449,7 @@ class BatchUpdateLevels extends BaseController
                 // 只更新系统用户表的group_id字段
                 $this->performanceStats['query_count']++;
                 $userModel->where('uid', $userId)->update([
-                    'group_id' => $newLevel,
-                    'update_time' => time()
+                    'group_id' => $newLevel
                 ]);
                 
                 // 清除相关缓存
@@ -807,7 +806,7 @@ class BatchUpdateLevels extends BaseController
     private function calculateUserLevelNew($personalTurnover, $teamTurnover, $levelCounts)
     {
         // 新的级别配置
-        // V1: 个人2万，团队30万
+        // V1: 个人2万，团队10万
         // V2: 个人5万，团队里面两个V1
         // V3: 个人10万，团队里面两个V2
         // V4: 个人20万，团队里面两个V3
@@ -828,7 +827,7 @@ class BatchUpdateLevels extends BaseController
         }
         
         // 检查V1级别条件
-        if ($personalTurnover >= 20000 && $teamTurnover >= 300000) {
+        if ($personalTurnover >= 20000 && $teamTurnover >= 100000) {
             return 1;
         }
         
