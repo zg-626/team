@@ -72,22 +72,25 @@ class DistributeDividends extends BaseController
             
             Log::info("商家980昨天总手续费: {$totalHandlingFee}");
             
-            // 获取所有团长（V1及以上级别的用户,group_id不为5）
+            // 获取所有团长（V1及以上级别的用户,group_id不为0）
             $teamLeaders = $userDianModel
-                ->where('group_id', '<>', 5)
+                ->where('group_id', '<>', 0)
                 ->where('status', 1)
-                ->field('uid,nickname,group_id,phone')
+                ->field('uid,nickname,group_id,phone,equity_value')
+                ->order('equity_value', 'desc')
                 ->select()
                 ->toArray();
 
             // 获取所有有权益值的用户（用于70%补贴）
-            $equityUsers = $userDianModel
+            /*$equityUsers = $userDianModel
                 ->where('equity_value', '>', 0)
                 ->where('status', 1)
                 ->field('uid,nickname,equity_value,phone')
                 ->order('equity_value', 'desc')
                 ->select()
-                ->toArray();
+                ->toArray();*/
+            // 等同于团长
+            $equityUsers=$teamLeaders;
             
             Log::info("团长数量: " . count($teamLeaders));
             Log::info("有权益值用户数量: " . count($equityUsers));
@@ -206,7 +209,7 @@ class DistributeDividends extends BaseController
     
     /**
      * 执行新的团队分红逻辑
-     * 每次分红都是总手续费的5%，30%给团队，70%给权益分红，最多4次
+     * 每次分红都是总手续费的5%，30%给团队，70%给权益分红（参与团队分红的用户同时参与权益分红），最多4次
      */
     private function executeNewTeamDividend($totalHandlingFee, $userModel, $equityUsers)
     {
@@ -255,9 +258,6 @@ class DistributeDividends extends BaseController
         $actualRounds = min(count($availableLevels), $maxDistributions);
         Log::info("可用等级: " . implode(',', $availableLevels) . "，实际分红轮数: {$actualRounds}");
         
-        // 计算总权益值（用于权益分红）
-        $totalEquityValue = array_sum(array_column($equityUsers, 'equity_value'));
-        
         // 执行实际轮数的分红
         for ($round = 1; $round <= $actualRounds; $round++) {
             // 计算本轮分红总额（总手续费的5%）
@@ -272,16 +272,22 @@ class DistributeDividends extends BaseController
             Log::info("- 团队分红: {$roundTeamAmount}");
             Log::info("- 权益分红: {$roundEquityAmount}");
             
-            // 执行团队分红（从V{$round}开始，依次往上发）
+            // 获取本轮参与团队分红的用户（从V{$round}开始，依次往上）
+            $roundTeamUsers = $this->getRoundTeamUsers($round, $userModel);
+            
+            // 执行团队分红
             $roundTeamRecords = $this->executeRoundTeamDividend($round, $roundTeamAmount, $userModel);
             $teamDividendRecords = array_merge($teamDividendRecords, $roundTeamRecords);
             $totalTeamDividendAmount += $roundTeamAmount;
             
-            // 执行权益分红（给当前团队的人）
-            if ($totalEquityValue > 0) {
-                $roundEquityRecords = $this->executeRoundEquityDividend($round, $roundEquityAmount, $equityUsers, $totalEquityValue, $userModel);
-                $equityDividendRecords = array_merge($equityDividendRecords, $roundEquityRecords);
-                $totalEquityDividendAmount += $roundEquityAmount;
+            // 执行权益分红（给参与本轮团队分红的用户）
+            if (count($roundTeamUsers) > 0) {
+                $roundTotalEquityValue = array_sum(array_column($roundTeamUsers, 'equity_value'));
+                if ($roundTotalEquityValue > 0) {
+                    $roundEquityRecords = $this->executeRoundEquityDividend($round, $roundEquityAmount, $roundTeamUsers, $roundTotalEquityValue, $userModel);
+                    $equityDividendRecords = array_merge($equityDividendRecords, $roundEquityRecords);
+                    $totalEquityDividendAmount += $roundEquityAmount;
+                }
             }
         }
         
@@ -301,12 +307,11 @@ class DistributeDividends extends BaseController
     }
     
     /**
-     * 执行单轮团队分红
-     * 从指定级别开始，依次往上发
+     * 获取本轮参与团队分红的用户
+     * 从指定级别开始，依次往上
      */
-    private function executeRoundTeamDividend($round, $teamAmount, $userModel)
+    private function getRoundTeamUsers($round, $userModel)
     {
-        $records = [];
         $eligibleUsers = [];
         
         // 从V{$round}开始，依次往上收集用户
@@ -314,11 +319,23 @@ class DistributeDividends extends BaseController
             $levelUsers = $userModel
                 ->where('group_id', $level)
                 ->where('status', 1)
-                ->field('uid,nickname,group_id,phone')
+                ->field('uid,nickname,group_id,phone,equity_value')
                 ->select()
                 ->toArray();
             $eligibleUsers = array_merge($eligibleUsers, $levelUsers);
         }
+        
+        return $eligibleUsers;
+    }
+    
+    /**
+     * 执行单轮团队分红
+     * 从指定级别开始，依次往上发
+     */
+    private function executeRoundTeamDividend($round, $teamAmount, $userModel)
+    {
+        $records = [];
+        $eligibleUsers = $this->getRoundTeamUsers($round, $userModel);
         
         $userCount = count($eligibleUsers);
         
@@ -357,7 +374,7 @@ class DistributeDividends extends BaseController
     
     /**
      * 执行单轮权益分红
-     * 给当前团队的人按权益值比例分红
+     * 给参与本轮团队分红的用户按权益值比例分红
      */
     private function executeRoundEquityDividend($round, $equityAmount, $equityUsers, $totalEquityValue, $userModel)
     {

@@ -405,7 +405,7 @@ class BatchUpdateLevels extends BaseController
         $user = $this->getUserWithCache($userId, $userModel);
         
         // 修正用户存在性判断逻辑
-        if (empty($user) || !is_array($user) && !is_object($user)) {
+        /*if (empty($user) || !is_array($user) && !is_object($user)) {
             throw new \Exception('用户不存在');
         }
         
@@ -417,7 +417,7 @@ class BatchUpdateLevels extends BaseController
         // 如果是对象但没有uid属性，也认为用户不存在
         if (is_object($user) && !isset($user->uid)) {
             throw new \Exception('用户数据无效');
-        }
+        }*/
         
         // 直接从用户表获取业绩数据（这些字段已经包含了正确的计算结果）
         $personalTurnover = floatval($user['pay_price']);
@@ -442,14 +442,11 @@ class BatchUpdateLevels extends BaseController
             echo ", 最终团队业绩: {$teamTurnover}\n";
         }
         
-        // 获取直推用户中各级别数量（用于升级条件判断）
-        $directLevelCounts = $this->getDirectPushLevelCounts($userId, $userModel);
-        
-        // 注释：团队级别统计在当前升级规则中暂不使用
-        // $levelCounts = $this->getTeamLevelCountsWithCache($teamMemberIds, $userModel);
+        // 获取团队中各级别数量（用于升级条件判断）
+        $teamLevelCounts = $this->getTeamLevelCountsWithCache($teamMemberIds, $userModel);
         
         // 根据新的升级条件确定用户级别
-        $newLevel = $this->calculateUserLevelNew($personalTurnover, $teamTurnover, $directLevelCounts);
+        $newLevel = $this->calculateUserLevelNew($personalTurnover, $teamTurnover, $teamLevelCounts);
         
         // 更新用户级别
         $oldLevel = $user['group_id'] ?? 0;
@@ -474,8 +471,7 @@ class BatchUpdateLevels extends BaseController
             'uid' => $userId,
             'personal_turnover' => $personalTurnover,
             'team_turnover' => $teamTurnover,
-            // 'level_counts' => $levelCounts, // 暂不使用
-            'direct_level_counts' => $directLevelCounts,
+            'team_level_counts' => $teamLevelCounts,
             'old_level' => $oldLevel,
             'new_level' => $newLevel,
             'level_updated' => $levelUpdated
@@ -490,13 +486,13 @@ class BatchUpdateLevels extends BaseController
      */
     private function getUserWithCache($userId, $userModel)
     {
-        $cacheKey = $this->cachePrefix . "user_{$userId}";
-        $user = Cache::get($cacheKey);
+//        $cacheKey = $this->cachePrefix . "user_{$userId}";
+//        $user = Cache::get($cacheKey);
         
-        if ($user === false || $user === null) {
-            // Log::info("getUserWithCache - 缓存未命中或为空，开始查询用户ID: {$userId}");
-            $this->performanceStats['cache_misses']++;
-            $this->performanceStats['query_count']++;
+//        if ($user === false || $user === null) {
+//            // Log::info("getUserWithCache - 缓存未命中或为空，开始查询用户ID: {$userId}");
+//            $this->performanceStats['cache_misses']++;
+//            $this->performanceStats['query_count']++;
             
             // 添加调试日志
             // Log::info("getUserWithCache - 查询用户ID: {$userId}");
@@ -532,18 +528,18 @@ class BatchUpdateLevels extends BaseController
                     }
                     
                     // 验证用户数据的有效性
-                    if (is_array($user) && isset($user['uid']) && $user['uid'] == $userId) {
-                        Cache::set($cacheKey, $user, 1800); // 缓存30分钟
-                        // Log::info("getUserWithCache - 用户数据已缓存");
-                    } else {
-                        // Log::warning("getUserWithCache - 用户数据无效，不进行缓存");
-                        $user = false;
-                    }
+//                    if (is_array($user) && isset($user['uid']) && $user['uid'] == $userId) {
+//                        Cache::set($cacheKey, $user, 1800); // 缓存30分钟
+//                        // Log::info("getUserWithCache - 用户数据已缓存");
+//                    } else {
+//                        // Log::warning("getUserWithCache - 用户数据无效，不进行缓存");
+//                        $user = false;
+//                    }
                 } else {
                     // Log::warning("getUserWithCache - 用户ID {$userId} 所有查询方式都失败");
                     
                     // 设置一个短期的"用户不存在"缓存，避免重复查询
-                    Cache::set($cacheKey, false, 300); // 缓存5分钟
+                    //Cache::set($cacheKey, false, 300); // 缓存5分钟
                     
                     // 最后尝试: 检查表是否存在以及字段是否正确
                     try {
@@ -570,14 +566,14 @@ class BatchUpdateLevels extends BaseController
                 Log::error("getUserWithCache - 错误文件: " . $e->getFile() . " 行号: " . $e->getLine());
                 return false;
             }
-        } else {
-            $this->performanceStats['cache_hits']++;
-            // Log::info("getUserWithCache - 从缓存获取用户ID: {$userId}");
-            // Log::info("getUserWithCache - 缓存数据类型: " . gettype($user));
-            // Log::info("getUserWithCache - 缓存数据内容: " . json_encode($user));
-            // Log::info("getUserWithCache - 缓存数据是否为空: " . (empty($user) ? '是' : '否'));
-            // Log::info("getUserWithCache - 缓存数据布尔判断: " . ($user ? '真' : '假'));
-        }
+//        } else {
+//            $this->performanceStats['cache_hits']++;
+//            // Log::info("getUserWithCache - 从缓存获取用户ID: {$userId}");
+//            // Log::info("getUserWithCache - 缓存数据类型: " . gettype($user));
+//            // Log::info("getUserWithCache - 缓存数据内容: " . json_encode($user));
+//            // Log::info("getUserWithCache - 缓存数据是否为空: " . (empty($user) ? '是' : '否'));
+//            // Log::info("getUserWithCache - 缓存数据布尔判断: " . ($user ? '真' : '假'));
+//        }
         
         return $user;
     }
@@ -590,10 +586,10 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamMemberIdsWithCache($userId, $userModel)
     {
-        $cacheKey = $this->cachePrefix . "team_members_{$userId}";
-        $teamMemberIds = Cache::get($cacheKey);
+//        $cacheKey = $this->cachePrefix . "team_members_{$userId}";
+//        $teamMemberIds = Cache::get($cacheKey);
         
-        if ($teamMemberIds === false || $teamMemberIds === null) {
+        //if ($teamMemberIds === false || $teamMemberIds === null) {
             $this->performanceStats['cache_misses']++;
             $teamMemberIds = $this->getTeamMemberIds($userId, $userModel);
             
@@ -603,8 +599,8 @@ class BatchUpdateLevels extends BaseController
                 $teamMemberIds = [$userId]; // 默认只包含自己
             }
             
-            Cache::set($cacheKey, $teamMemberIds, 1800); // 缓存30分钟
-        } else {
+            //Cache::set($cacheKey, $teamMemberIds, 1800); // 缓存30分钟
+        //} else {
             $this->performanceStats['cache_hits']++;
             
             // 验证缓存数据类型
@@ -612,7 +608,7 @@ class BatchUpdateLevels extends BaseController
                 Log::warning("缓存中的团队成员ID不是数组类型: " . gettype($teamMemberIds) . ", 用户ID: {$userId}");
                 $teamMemberIds = [$userId]; // 默认只包含自己
             }
-        }
+        //}
         
         return $teamMemberIds;
     }
@@ -628,7 +624,7 @@ class BatchUpdateLevels extends BaseController
         $cacheKey = $this->cachePrefix . "personal_turnover_{$userId}";
         $turnover = Cache::get($cacheKey);
         
-        if ($turnover === false) {
+        //if ($turnover === false) {
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
@@ -640,10 +636,10 @@ class BatchUpdateLevels extends BaseController
                 ->find();
             
             $turnover = $personalStats['personal_turnover'] ?? 0;
-            Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
-        } else {
-            $this->performanceStats['cache_hits']++;
-        }
+            //Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
+//        } else {
+//            $this->performanceStats['cache_hits']++;
+//        }
         
         return $turnover;
     }
@@ -661,7 +657,7 @@ class BatchUpdateLevels extends BaseController
         $cacheKey = $this->cachePrefix . "team_turnover_" . md5(implode(',', $teamMemberIds) . "_exclude_region_{$userId}");
         $turnover = Cache::get($cacheKey);
         
-        if ($turnover === false) {
+        //if ($turnover === false) {
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
@@ -682,10 +678,10 @@ class BatchUpdateLevels extends BaseController
             }
             
             $turnover = $totalTeamTurnover - $regionTurnover;
-            Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
-        } else {
-            $this->performanceStats['cache_hits']++;
-        }
+            //Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
+//        } else {
+//            $this->performanceStats['cache_hits']++;
+//        }
         
         return $turnover;
     }
@@ -699,15 +695,15 @@ class BatchUpdateLevels extends BaseController
     private function getTeamLevelCountsWithCache($teamMemberIds, $userModel)
     {
         $cacheKey = $this->cachePrefix . "group_ids_" . md5(implode(',', $teamMemberIds));
-        $levelCounts = Cache::get($cacheKey);
+        //$levelCounts = Cache::get($cacheKey);
         
-        if ($levelCounts === false) {
+        //if ($levelCounts === false) {
             $this->performanceStats['cache_misses']++;
             $levelCounts = $this->getTeamLevelCounts($teamMemberIds, $userModel);
-            Cache::set($cacheKey, $levelCounts, 1800); // 缓存30分钟
-        } else {
-            $this->performanceStats['cache_hits']++;
-        }
+            //Cache::set($cacheKey, $levelCounts, 1800); // 缓存30分钟
+//        } else {
+//            $this->performanceStats['cache_hits']++;
+//        }
         
         return $levelCounts;
     }
@@ -736,7 +732,7 @@ class BatchUpdateLevels extends BaseController
      * @param int $maxLevel 最大分销级别，默认2级，0表示无限级
      * @return array 团队成员ID数组
      */
-    private function getTeamMemberIds($userId, $userModel, $maxLevel = 2)
+    private function getTeamMemberIds($userId, $userModel, $maxLevel = 0)
     {
         try {
             $memberIds = [$userId]; // 包含自己
@@ -827,28 +823,28 @@ class BatchUpdateLevels extends BaseController
      * 根据新的升级条件计算用户级别
      * @param float $personalTurnover 个人业绩
      * @param float $teamTurnover 团队业绩（已减去大区）
-     * @param array $directLevelCounts 直推级别统计
+     * @param array $teamLevelCounts 团队级别统计（无限级）
      */
-    private function calculateUserLevelNew($personalTurnover, $teamTurnover, $directLevelCounts)
+    private function calculateUserLevelNew($personalTurnover, $teamTurnover, $teamLevelCounts)
     {
         // 新的级别配置（修改后）
-        // V1: 个人2万，团队30万（减去大区业绩）
-        // V2: 个人5万，直推里面两个V1
-        // V3: 个人10万，直推里面两个V2
-        // V4: 个人20万，直推里面两个V3
+        // V1: 个人2万，团队10万（减去大区业绩）
+        // V2: 个人5万，团队里面两个V1
+        // V3: 个人10万，团队里面两个V2
+        // V4: 个人20万，团队里面两个V3
         
-        // 检查V4级别条件：个人20万 + 直推里面两个V3
-        if ($personalTurnover >= 200000 && $directLevelCounts['v3'] >= 2) {
+        // 检查V4级别条件：个人20万 + 团队里面两个V3
+        if ($personalTurnover >= 200000 && $teamLevelCounts['v3'] >= 2) {
             return 4;
         }
         
-        // 检查V3级别条件：个人10万 + 直推里面两个V2
-        if ($personalTurnover >= 100000 && $directLevelCounts['v2'] >= 2) {
+        // 检查V3级别条件：个人10万 + 团队里面两个V2
+        if ($personalTurnover >= 100000 && $teamLevelCounts['v2'] >= 2) {
             return 3;
         }
         
-        // 检查V2级别条件：个人5万 + 直推里面两个V1
-        if ($personalTurnover >= 50000 && $directLevelCounts['v1'] >= 2) {
+        // 检查V2级别条件：个人5万 + 团队里面两个V1
+        if ($personalTurnover >= 50000 && $teamLevelCounts['v1'] >= 2) {
             return 2;
         }
         
