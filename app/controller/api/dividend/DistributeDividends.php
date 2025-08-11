@@ -79,16 +79,7 @@ class DistributeDividends extends BaseController
                 ->field('uid,nickname,group_id,phone')
                 ->select()
                 ->toArray();
-            
-            // 获取所有有积分的用户（用于70%补贴）
-            /*$integralUsers = $userDianModel
-                ->where('integral', '>', 0)
-                ->where('status', 1)
-                ->field('uid,nickname,integral,phone')
-                ->order('integral', 'desc')
-                ->select()
-                ->toArray();*/
-            
+
             // 获取所有有权益值的用户（用于70%补贴）
             $equityUsers = $userDianModel
                 ->where('equity_value', '>', 0)
@@ -100,7 +91,6 @@ class DistributeDividends extends BaseController
             
             Log::info("团长数量: " . count($teamLeaders));
             Log::info("有权益值用户数量: " . count($equityUsers));
-            //Log::info("有积分用户数量: " . count($integralUsers));
             
             // 计算分红基数（总手续费的20%）
             $dividendBase = $totalHandlingFee * 0.20;
@@ -147,21 +137,11 @@ class DistributeDividends extends BaseController
                 Log::info("团长 {$leader['nickname']}({$leader['uid']}) 补贴: {$dividendAmount}");
             }
             
-            // 计算积分补贴池（基数的70%）
+            // 计算权益补贴池（基数的70%）
             $integralPool = $dividendBase * $integralRate;
             $integralUserResults = [];
             
             Log::info("\n{$integralPercent}%权益补贴池: {$integralPool}");
-            
-            /*if (count($integralUsers) > 0) {
-                // 计算总积分权重
-                $totalIntegral = array_sum(array_column($integralUsers, 'integral'));
-                
-                if ($totalIntegral > 0) {
-                    // 使用红包算法分配积分补贴
-                    $integralUserResults = $this->distributeIntegralDividend($integralUsers, $integralPool, $totalIntegral, $userDianModel);
-                }
-            }*/
 
             if (count($equityUsers) > 0) {
                 // 计算总权益值
@@ -394,7 +374,7 @@ class DistributeDividends extends BaseController
      * 积分补贴算法（类似红包算法）
      * 根据用户积分权重分配补贴金额
      */
-    private function distributeIntegralDividend($users, $totalAmount, $totalIntegral, $userModel)
+    private function distributeIntegralDividend($users, $totalAmount, $totalIntegral, $userModel): array
     {
         $results = [];
         $remainingAmount = $totalAmount;
@@ -465,9 +445,9 @@ class DistributeDividends extends BaseController
      * @param float $dividendBase 分红基数
      * @param float $teamLeaderPool 团长补贴池
      * @param float $remainingTeamLeaderPool 剩余团长补贴池
-     * @param float $integralPool 积分补贴池
+     * @param float $integralPool 权益补贴池
      * @param array $teamLeaderResults 团长补贴结果
-     * @param array $integralUserResults 积分补贴结果
+     * @param array $integralUserResults 权益补贴结果
      * @param array $teamDividendResult 团队分红结果
      */
     private function saveDividendData(
@@ -483,7 +463,8 @@ class DistributeDividends extends BaseController
         $teamLeaderResults,
         $integralUserResults,
         $teamDividendResult
-    ) {
+    ): void
+    {
         try {
             // 从配置文件获取分配比例用于备注
             $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
@@ -596,8 +577,8 @@ class DistributeDividends extends BaseController
             // 提交事务
             Db::commit();
             Log::info("补贴数据保存成功!");
-            
-            return [
+
+            [
                 'total_handling_fee' => $totalHandlingFee,
                 'dividend_base' => $dividendBase,
                 'dividend_date' => $dividendDate,
@@ -606,6 +587,7 @@ class DistributeDividends extends BaseController
                 'user_records_count' => count($userRecords),
                 'message' => '补贴数据保存成功'
             ];
+            return;
             
         } catch (\Exception $e) {
             // 回滚事务
