@@ -866,8 +866,8 @@ class UserRepository extends BaseRepository
         if (!$has)
             throw new AuthException('无效的token');
         $lastTime = $cache->get('user_' . $token);
-        if (($lastTime + (intval($cache->get('admin.user_token_valid_exp', 15))) * 24 * 60 * 60) < time())
-            throw new AuthException('token 已过期');
+        /*if (($lastTime + (intval($cache->get('admin.user_token_valid_exp', 15))) * 24 * 60 * 60) < time())
+            throw new AuthException('token 已过期');*/
     }
 
     /**

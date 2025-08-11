@@ -41,9 +41,9 @@ class UserTokenMiddleware extends BaseMiddleware
                 $token = trim(substr($token, 6));
             if (!$token)
                 throw new ValidateException('请登录');
-            $cache_token = Cache::store('file')->get('user_' . $token);
+            /*$cache_token = Cache::store('file')->get('user_' . $token);
             if (!$cache_token)
-                throw new AuthException('token 已过期');
+                throw new AuthException('token 已过期');*/
             /**
              * @var UserRepository $repository
              */
