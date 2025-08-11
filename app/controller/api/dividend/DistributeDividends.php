@@ -92,66 +92,27 @@ class DistributeDividends extends BaseController
             Log::info("团长数量: " . count($teamLeaders));
             Log::info("有权益值用户数量: " . count($equityUsers));
             
-            // 计算分红基数（总手续费的20%）
-            $dividendBase = $totalHandlingFee * 0.20;
-            Log::info("分红基数(总手续费20%): {$dividendBase}");
+            // 执行新的团队分红逻辑（每次总手续费的5%，最多4次）
+            $newDividendResult = $this->executeNewTeamDividend($totalHandlingFee, $userDianModel, $equityUsers);
             
-            // 从配置文件获取分配比例
-            $teamLeaderRate = config('threshold_dividend.allocation.team_leader_rate', 0.30);
-            $integralRate = config('threshold_dividend.allocation.integral_rate', 0.70);
-            $teamLeaderPercent = (int)($teamLeaderRate * 100);
-            $integralPercent = (int)($integralRate * 100);
+            // 提取结果数据
+            $teamDividendRecords = $newDividendResult['team_dividend_records'];
+            $equityDividendRecords = $newDividendResult['equity_dividend_records'];
+            $totalTeamDividendAmount = $newDividendResult['total_team_dividend_amount'];
+            $totalEquityDividendAmount = $newDividendResult['total_equity_dividend_amount'];
+            $totalDividendRounds = $newDividendResult['total_rounds'];
             
-            // 计算团长补贴池（基数的30%）
-            $teamLeaderPool = $dividendBase * $teamLeaderRate;
+            // 为了兼容原有的统计逻辑，设置一些变量
+            $teamLeaderResults = []; // 新逻辑中不再有单独的团长补贴
+            $integralUserResults = $equityDividendRecords; // 权益分红结果
+            $teamLeaderPool = $totalTeamDividendAmount; // 团队分红总额
+            $remainingTeamLeaderPool = 0; // 新逻辑中没有剩余
+            $integralPool = $totalEquityDividendAmount; // 权益分红总额
+            $dividendBase = $totalTeamDividendAmount + $totalEquityDividendAmount; // 总分红基数
             
-            // 执行团队分红逻辑
-            $teamDividendResult = $this->executeTeamDividend($teamLeaderPool, $userDianModel);
-            $remainingTeamLeaderPool = $teamDividendResult['remaining_amount'];
-            
-            Log::info("\n{$teamLeaderPercent}%团长补贴池: {$teamLeaderPool}");
-            Log::info("团队分红已分配: {$teamDividendResult['distributed_amount']}");
-            Log::info("团长补贴池剩余: {$remainingTeamLeaderPool}");
-            
-            // 剩余团长补贴平分给所有团长
-            $teamLeaderCount = count($teamLeaders);
-            $dividendPerLeader = $teamLeaderCount > 0 ? $remainingTeamLeaderPool / $teamLeaderCount : 0;
-            Log::info("每个团长补贴: {$dividendPerLeader}");
-            
-            // 为团长分配补贴
-            $teamLeaderResults = [];
-            foreach ($teamLeaders as $leader) {
-                $dividendAmount = round($dividendPerLeader, 2);
-                
-                // 更新用户的coupon_amount字段
-                $this->updateUserCouponAmount($leader['phone'], $dividendAmount, $userDianModel);
-                
-                $teamLeaderResults[] = [
-                    'uid' => $leader['uid'],
-                    'nickname' => $leader['nickname'],
-                    'level' => $leader['group_id'],
-                    'phone' => $leader['phone'],
-                    'dividend_amount' => $dividendAmount
-                ];
-                
-                Log::info("团长 {$leader['nickname']}({$leader['uid']}) 补贴: {$dividendAmount}");
-            }
-            
-            // 计算权益补贴池（基数的70%）
-            $integralPool = $dividendBase * $integralRate;
-            $integralUserResults = [];
-            
-            Log::info("\n{$integralPercent}%权益补贴池: {$integralPool}");
-
-            if (count($equityUsers) > 0) {
-                // 计算总权益值
-                $totalEquityValue = array_sum(array_column($equityUsers, 'equity_value'));
-
-                if ($totalEquityValue > 0) {
-                    // 使用权益值比例分配补贴
-                    $integralUserResults = $this->distributeEquityDividend($equityUsers, $integralPool, $totalEquityValue, $userDianModel);
-                }
-            }
+            // 设置百分比用于日志显示
+            $teamLeaderPercent = 30;
+            $integralPercent = 70;
             
             // 输出统计结果
             Log::info("\n补贴任务完成:");
@@ -178,7 +139,7 @@ class DistributeDividends extends BaseController
                 $integralPool,
                 $teamLeaderResults,
                 $integralUserResults,
-                $teamDividendResult
+                ['records' => $teamDividendRecords, 'distributed_amount' => $totalTeamDividendAmount]
             );
             
             // 记录到日志
@@ -187,12 +148,13 @@ class DistributeDividends extends BaseController
                 'total_handling_fee' => $totalHandlingFee,
                 'dividend_base' => $dividendBase,
                 'team_leader_pool' => $teamLeaderPool,
-                'team_dividend_distributed' => $teamDividendResult['distributed_amount'],
+                'team_dividend_distributed' => $totalTeamDividendAmount,
                 'remaining_team_leader_pool' => $remainingTeamLeaderPool,
                 'integral_pool' => $integralPool,
                 'team_leader_count' => count($teamLeaderResults),
-                //'integral_user_count' => count($integralUserResults),
-                'team_dividend_count' => count($teamDividendResult['records'])
+                'equity_user_count' => count($integralUserResults),
+                'team_dividend_count' => count($teamDividendRecords),
+                'total_dividend_rounds' => $totalDividendRounds
             ]);
             
             Log::info('补贴任务执行完成!');
@@ -210,7 +172,7 @@ class DistributeDividends extends BaseController
     /**
      * 更新用户的coupon_amount字段
      */
-    private function updateUserCouponAmount($phone, $dividendAmount, $userModel)
+    private function updateUserCouponAmount($phone, $dividendAmount, $userModel): void
     {
         try {
             $user = $userModel->where('phone', $phone)->find();
@@ -237,7 +199,199 @@ class DistributeDividends extends BaseController
     }
     
     /**
-     * 执行团队分红逻辑
+     * 执行新的团队分红逻辑
+     * 每次分红都是总手续费的5%，30%给团队，70%给权益分红，最多4次
+     */
+    private function executeNewTeamDividend($totalHandlingFee, $userModel, $equityUsers)
+    {
+        $teamDividendRecords = [];
+        $equityDividendRecords = [];
+        $totalTeamDividendAmount = 0;
+        $totalEquityDividendAmount = 0;
+        $distributionRate = 0.05; // 每次分配总手续费的5%
+        $teamRate = 0.30; // 团队分红30%
+        $equityRate = 0.70; // 权益分红70%
+        $maxDistributions = 4; // 最多分配4次
+        
+        Log::info("\n开始执行新的团队分红逻辑:");
+        Log::info("- 总手续费: {$totalHandlingFee}");
+        Log::info("- 每次分红比例: " . ($distributionRate * 100) . "%");
+        Log::info("- 团队分红比例: " . ($teamRate * 100) . "%");
+        Log::info("- 权益分红比例: " . ($equityRate * 100) . "%");
+        
+        // 检查是否有用户参与分红（至少需要V1级别用户）
+        $hasUsers = false;
+        $availableLevels = [];
+        for ($level = 1; $level <= 4; $level++) {
+            $levelUsers = $userModel
+                ->where('group_id', $level)
+                ->where('status', 1)
+                ->count();
+            if ($levelUsers > 0) {
+                $hasUsers = true;
+                $availableLevels[] = $level;
+                Log::info("V{$level}级别用户数: {$levelUsers}");
+            }
+        }
+        
+        if (!$hasUsers) {
+            Log::info("没有符合条件的用户，跳过分红");
+            return [
+                'team_dividend_records' => [],
+                'equity_dividend_records' => [],
+                'total_team_dividend_amount' => 0,
+                'total_equity_dividend_amount' => 0,
+                'total_rounds' => 0
+            ];
+        }
+        
+        // 根据可用等级数量决定分红轮数（最多4轮）
+        $actualRounds = min(count($availableLevels), $maxDistributions);
+        Log::info("可用等级: " . implode(',', $availableLevels) . "，实际分红轮数: {$actualRounds}");
+        
+        // 计算总权益值（用于权益分红）
+        $totalEquityValue = array_sum(array_column($equityUsers, 'equity_value'));
+        
+        // 执行实际轮数的分红
+        for ($round = 1; $round <= $actualRounds; $round++) {
+            // 计算本轮分红总额（总手续费的5%）
+            $roundTotalAmount = $totalHandlingFee * $distributionRate;
+            
+            // 计算团队分红和权益分红金额
+            $roundTeamAmount = $roundTotalAmount * $teamRate;
+            $roundEquityAmount = $roundTotalAmount * $equityRate;
+            
+            Log::info("\n第{$round}轮分红开始:");
+            Log::info("- 本轮总分红: {$roundTotalAmount}");
+            Log::info("- 团队分红: {$roundTeamAmount}");
+            Log::info("- 权益分红: {$roundEquityAmount}");
+            
+            // 执行团队分红（从V{$round}开始，依次往上发）
+            $roundTeamRecords = $this->executeRoundTeamDividend($round, $roundTeamAmount, $userModel);
+            $teamDividendRecords = array_merge($teamDividendRecords, $roundTeamRecords);
+            $totalTeamDividendAmount += $roundTeamAmount;
+            
+            // 执行权益分红（给当前团队的人）
+            if ($totalEquityValue > 0) {
+                $roundEquityRecords = $this->executeRoundEquityDividend($round, $roundEquityAmount, $equityUsers, $totalEquityValue, $userModel);
+                $equityDividendRecords = array_merge($equityDividendRecords, $roundEquityRecords);
+                $totalEquityDividendAmount += $roundEquityAmount;
+            }
+        }
+        
+        Log::info("\n新团队分红逻辑完成:");
+        Log::info("- 总团队分红: {$totalTeamDividendAmount}");
+        Log::info("- 总权益分红: {$totalEquityDividendAmount}");
+        Log::info("- 团队分红记录数: " . count($teamDividendRecords));
+        Log::info("- 权益分红记录数: " . count($equityDividendRecords));
+        
+        return [
+            'team_dividend_records' => $teamDividendRecords,
+            'equity_dividend_records' => $equityDividendRecords,
+            'total_team_dividend_amount' => $totalTeamDividendAmount,
+            'total_equity_dividend_amount' => $totalEquityDividendAmount,
+            'total_rounds' => $actualRounds
+        ];
+    }
+    
+    /**
+     * 执行单轮团队分红
+     * 从指定级别开始，依次往上发
+     */
+    private function executeRoundTeamDividend($round, $teamAmount, $userModel)
+    {
+        $records = [];
+        $eligibleUsers = [];
+        
+        // 从V{$round}开始，依次往上收集用户
+        for ($level = $round; $level <= 4; $level++) {
+            $levelUsers = $userModel
+                ->where('group_id', $level)
+                ->where('status', 1)
+                ->field('uid,nickname,group_id,phone')
+                ->select()
+                ->toArray();
+            $eligibleUsers = array_merge($eligibleUsers, $levelUsers);
+        }
+        
+        $userCount = count($eligibleUsers);
+        
+        if ($userCount > 0) {
+            $dividendPerUser = $teamAmount / $userCount;
+            
+            Log::info("第{$round}轮团队分红 - 从V{$round}级开始往上:");
+            Log::info("- 分配金额: {$teamAmount}");
+            Log::info("- 符合条件用户数: {$userCount}");
+            Log::info("- 每人分红: {$dividendPerUser}");
+            
+            foreach ($eligibleUsers as $user) {
+                $dividendAmount = round($dividendPerUser, 2);
+                
+                // 更新用户的coupon_amount字段
+                $this->updateUserCouponAmount($user['phone'], $dividendAmount, $userModel);
+                
+                $records[] = [
+                    'uid' => $user['uid'],
+                    'nickname' => $user['nickname'],
+                    'level' => $user['group_id'],
+                    'phone' => $user['phone'],
+                    'dividend_amount' => $dividendAmount,
+                    'distribution_round' => $round,
+                    'distribution_type' => "团队分红第{$round}轮"
+                ];
+                
+                Log::info("  用户 {$user['nickname']}({$user['uid']}) V{$user['group_id']}级 分红: {$dividendAmount}");
+            }
+        } else {
+            Log::info("第{$round}轮团队分红 - 无符合条件用户");
+        }
+        
+        return $records;
+    }
+    
+    /**
+     * 执行单轮权益分红
+     * 给当前团队的人按权益值比例分红
+     */
+    private function executeRoundEquityDividend($round, $equityAmount, $equityUsers, $totalEquityValue, $userModel)
+    {
+        $records = [];
+        
+        Log::info("第{$round}轮权益分红:");
+        Log::info("- 分配金额: {$equityAmount}");
+        Log::info("- 总权益值: {$totalEquityValue}");
+        Log::info("- 权益用户数: " . count($equityUsers));
+        
+        foreach ($equityUsers as $user) {
+            // 计算用户权益值占比
+            $equityRatio = $user['equity_value'] / $totalEquityValue;
+            
+            // 计算应得分红金额
+            $dividendAmount = $equityAmount * $equityRatio;
+            $dividendAmount = round($dividendAmount, 2);
+            
+            // 更新用户的coupon_amount字段
+            $this->updateUserCouponAmount($user['phone'], $dividendAmount, $userModel);
+            
+            $records[] = [
+                'uid' => $user['uid'],
+                'nickname' => $user['nickname'],
+                'equity_value' => $user['equity_value'],
+                'phone' => $user['phone'],
+                'dividend_amount' => $dividendAmount,
+                'equity_ratio' => round($equityRatio * 100, 4),
+                'distribution_round' => $round,
+                'distribution_type' => "权益分红第{$round}轮"
+            ];
+            
+            Log::info("  权益用户 {$user['nickname']}({$user['uid']}) 权益值: {$user['equity_value']}, 占比: " . round($equityRatio * 100, 4) . "%, 分红: {$dividendAmount}");
+        }
+        
+        return $records;
+    }
+    
+    /**
+     * 执行团队分红逻辑（旧版本，保留备用）
      * 按级别递进分配，每次分配5%，最多分4次
      */
     private function executeTeamDividend($teamLeaderPool, $userModel)
