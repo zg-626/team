@@ -87,6 +87,7 @@ class BatchUpdateLevels extends BaseController
             }
             
             Log::info("发现 {$totalCount} 个用户，开始分批处理...");
+            echo "发现 {$totalCount} 个用户，开始分批处理...\n";
             
             // 处理结果统计
             $processResult = $this->processBatchUsers(
@@ -403,13 +404,6 @@ class BatchUpdateLevels extends BaseController
         // 获取用户信息（带缓存）
         $user = $this->getUserWithCache($userId, $userModel);
         
-        // 添加调试日志
-        Log::info("calculateAndUpdateUserLevel - 用户ID: {$userId}");
-        Log::info("calculateAndUpdateUserLevel - 用户数据类型: " . gettype($user));
-        Log::info("calculateAndUpdateUserLevel - 用户数据内容: " . json_encode($user));
-        Log::info("calculateAndUpdateUserLevel - 用户数据是否为空: " . (empty($user) ? '是' : '否'));
-        Log::info("calculateAndUpdateUserLevel - 用户数据布尔判断: " . ($user ? '真' : '假'));
-        
         // 修正用户存在性判断逻辑
         if (empty($user) || !is_array($user) && !is_object($user)) {
             throw new \Exception('用户不存在');
@@ -425,14 +419,15 @@ class BatchUpdateLevels extends BaseController
             throw new \Exception('用户数据无效');
         }
         
-        // 获取团队所有成员ID（带缓存优化）
+        // 直接从用户表获取业绩数据（这些字段已经包含了正确的计算结果）
+        $personalTurnover = floatval($user['pay_price']);
+        $teamTurnover = floatval($user['spread_pay_price']);
+        
+        // 获取团队所有成员ID（用于直推级别统计）
         $teamMemberIds = $this->getTeamMemberIdsWithCache($userId, $userModel);
         
-        // 统计个人流水（带缓存）
-        $personalTurnover = $this->getPersonalTurnoverWithCache($userId, $orderModel);
-        
-        // 统计团队流水（带缓存）- 减去大区业绩
-        $teamTurnover = $this->getTeamTurnoverWithCache($teamMemberIds, $orderModel, $userId, $userModel);
+        // 记录用户业绩信息
+        echo "用户ID: {$userId} - 个人业绩: {$personalTurnover}, 团队业绩: {$teamTurnover}\n";
         
         // 获取直推用户中各级别数量（用于升级条件判断）
         $directLevelCounts = $this->getDirectPushLevelCounts($userId, $userModel);
@@ -844,8 +839,8 @@ class BatchUpdateLevels extends BaseController
             return 2;
         }
         
-        // 检查V1级别条件：个人2万 + 团队30万（减去大区业绩）
-        if ($personalTurnover >= 20000 && $teamTurnover >= 300000) {
+        // 检查V1级别条件：个人2万 + 团队10万（减去大区业绩）
+        if ($personalTurnover >= 20000 && $teamTurnover >= 100000) {
             return 1;
         }
         
