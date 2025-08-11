@@ -431,14 +431,17 @@ class BatchUpdateLevels extends BaseController
         // 统计个人流水（带缓存）
         $personalTurnover = $this->getPersonalTurnoverWithCache($userId, $orderModel);
         
-        // 统计团队流水（带缓存）
-        $teamTurnover = $this->getTeamTurnoverWithCache($teamMemberIds, $orderModel);
+        // 统计团队流水（带缓存）- 减去大区业绩
+        $teamTurnover = $this->getTeamTurnoverWithCache($teamMemberIds, $orderModel, $userId, $userModel);
         
-        // 获取团队中各级别用户数量（带缓存）
-        $levelCounts = $this->getTeamLevelCountsWithCache($teamMemberIds, $userModel);
+        // 获取直推用户中各级别数量（用于升级条件判断）
+        $directLevelCounts = $this->getDirectPushLevelCounts($userId, $userModel);
+        
+        // 注释：团队级别统计在当前升级规则中暂不使用
+        // $levelCounts = $this->getTeamLevelCountsWithCache($teamMemberIds, $userModel);
         
         // 根据新的升级条件确定用户级别
-        $newLevel = $this->calculateUserLevelNew($personalTurnover, $teamTurnover, $levelCounts);
+        $newLevel = $this->calculateUserLevelNew($personalTurnover, $teamTurnover, $directLevelCounts);
         
         // 更新用户级别
         $oldLevel = $user['group_id'] ?? 0;
@@ -463,7 +466,8 @@ class BatchUpdateLevels extends BaseController
             'uid' => $userId,
             'personal_turnover' => $personalTurnover,
             'team_turnover' => $teamTurnover,
-            'level_counts' => $levelCounts,
+            // 'level_counts' => $levelCounts, // 暂不使用
+            'direct_level_counts' => $directLevelCounts,
             'old_level' => $oldLevel,
             'new_level' => $newLevel,
             'level_updated' => $levelUpdated
@@ -637,20 +641,23 @@ class BatchUpdateLevels extends BaseController
     }
     
     /**
-     * 获取团队流水（带缓存）
+     * 获取团队流水（带缓存）- 减去大区业绩
      * @param array $teamMemberIds
      * @param StoreOrder $orderModel
+     * @param int $userId 当前用户ID
+     * @param User $userModel 用户模型
      * @return float
      */
-    private function getTeamTurnoverWithCache($teamMemberIds, $orderModel)
+    private function getTeamTurnoverWithCache($teamMemberIds, $orderModel, $userId = 0, $userModel = null)
     {
-        $cacheKey = $this->cachePrefix . "team_turnover_" . md5(implode(',', $teamMemberIds));
+        $cacheKey = $this->cachePrefix . "team_turnover_" . md5(implode(',', $teamMemberIds) . "_exclude_region_{$userId}");
         $turnover = Cache::get($cacheKey);
         
         if ($turnover === false) {
             $this->performanceStats['cache_misses']++;
             $this->performanceStats['query_count']++;
             
+            // 获取团队总业绩
             $teamStats = $orderModel
                 ->whereIn('uid', $teamMemberIds)
                 ->where('paid', 1)->where('offline_audit_status', 1)
@@ -658,7 +665,15 @@ class BatchUpdateLevels extends BaseController
                 ->field('sum(pay_price) as team_turnover')
                 ->find();
             
-            $turnover = $teamStats['team_turnover'] ?? 0;
+            $totalTeamTurnover = $teamStats['team_turnover'] ?? 0;
+            
+            // 减去大区业绩（V2及以上级别用户的团队业绩）
+            $regionTurnover = 0;
+            if ($userId > 0 && $userModel) {
+                $regionTurnover = $this->getRegionTurnover($userId, $userModel, $orderModel);
+            }
+            
+            $turnover = $totalTeamTurnover - $regionTurnover;
             Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
         } else {
             $this->performanceStats['cache_hits']++;
@@ -802,35 +817,147 @@ class BatchUpdateLevels extends BaseController
     
     /**
      * 根据新的升级条件计算用户级别
+     * @param float $personalTurnover 个人业绩
+     * @param float $teamTurnover 团队业绩（已减去大区）
+     * @param array $directLevelCounts 直推级别统计
      */
-    private function calculateUserLevelNew($personalTurnover, $teamTurnover, $levelCounts)
+    private function calculateUserLevelNew($personalTurnover, $teamTurnover, $directLevelCounts)
     {
-        // 新的级别配置
-        // V1: 个人2万，团队10万
-        // V2: 个人5万，团队里面两个V1
-        // V3: 个人10万，团队里面两个V2
-        // V4: 个人20万，团队里面两个V3
+        // 新的级别配置（修改后）
+        // V1: 个人2万，团队30万（减去大区业绩）
+        // V2: 个人5万，直推里面两个V1
+        // V3: 个人10万，直推里面两个V2
+        // V4: 个人20万，直推里面两个V3
         
-        // 检查V4级别条件
-        if ($personalTurnover >= 200000 && $levelCounts['v3'] >= 2) {
+        // 检查V4级别条件：个人20万 + 直推里面两个V3
+        if ($personalTurnover >= 200000 && $directLevelCounts['v3'] >= 2) {
             return 4;
         }
         
-        // 检查V3级别条件
-        if ($personalTurnover >= 100000 && $levelCounts['v2'] >= 2) {
+        // 检查V3级别条件：个人10万 + 直推里面两个V2
+        if ($personalTurnover >= 100000 && $directLevelCounts['v2'] >= 2) {
             return 3;
         }
         
-        // 检查V2级别条件
-        if ($personalTurnover >= 50000 && $levelCounts['v1'] >= 2) {
+        // 检查V2级别条件：个人5万 + 直推里面两个V1
+        if ($personalTurnover >= 50000 && $directLevelCounts['v1'] >= 2) {
             return 2;
         }
         
-        // 检查V1级别条件
-        if ($personalTurnover >= 20000 && $teamTurnover >= 100000) {
+        // 检查V1级别条件：个人2万 + 团队30万（减去大区业绩）
+        if ($personalTurnover >= 20000 && $teamTurnover >= 300000) {
             return 1;
         }
         
         return 0; // 默认0级
+    }
+    
+    /**
+     * 获取大区业绩（团队中最大的单个业绩）
+     * @param int $userId 当前用户ID
+     * @param User $userModel 用户模型
+     * @param StoreOrder $orderModel 订单模型
+     * @return float
+     */
+    private function getRegionTurnover($userId, $userModel, $orderModel)
+    {
+        try {
+            // 获取团队所有成员ID
+            $teamMemberIds = $this->getTeamMemberIds($userId, $userModel);
+            
+            if (empty($teamMemberIds) || count($teamMemberIds) <= 1) {
+                return 0; // 没有团队成员或只有自己
+            }
+            
+            $maxTurnover = 0;
+            
+            // 计算每个团队成员的个人业绩，找出最大值
+            foreach ($teamMemberIds as $memberId) {
+                if ($memberId == $userId) {
+                    continue; // 跳过自己
+                }
+                
+                $memberStats = $orderModel
+                    ->where('uid', $memberId)
+                    ->where('paid', 1)->where('offline_audit_status', 1)
+                    ->where('mer_id', 980)
+                    ->field('sum(pay_price) as turnover')
+                    ->find();
+                
+                $memberTurnover = $memberStats['turnover'] ?? 0;
+                if ($memberTurnover > $maxTurnover) {
+                    $maxTurnover = $memberTurnover;
+                }
+            }
+            
+            return $maxTurnover;
+            
+        } catch (\Exception $e) {
+            Log::error("获取大区业绩失败，用户ID: {$userId}, 错误: " . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    /**
+     * 获取直推用户中各级别数量（确保是不同用户线）
+     * @param int $userId 用户ID
+     * @param User $userModel 用户模型
+     * @return array
+     */
+    private function getDirectPushLevelCounts($userId, $userModel)
+    {
+        try {
+            $levelCounts = [
+                'v1' => 0,
+                'v2' => 0,
+                'v3' => 0,
+                'v4' => 0
+            ];
+            
+            // 获取直推用户（只统计直接邀请的用户）
+            $directUsers = $userModel
+                ->where('spread_uid', $userId)
+                ->where('status', 1)
+                ->field('uid,group_id')
+                ->select()
+                ->toArray();
+            
+            if (empty($directUsers)) {
+                return $levelCounts;
+            }
+            
+            // 按级别分组统计不同用户线的数量
+            $levelGroups = [
+                1 => [],
+                2 => [],
+                3 => [],
+                4 => []
+            ];
+            
+            // 将直推用户按级别分组
+            foreach ($directUsers as $user) {
+                $level = $user['group_id'] ?? 0;
+                if ($level >= 1 && $level <= 4) {
+                    $levelGroups[$level][] = $user['uid'];
+                }
+            }
+            
+            // 统计每个级别的用户数量（每个直推用户代表一条独立的线）
+            $levelCounts['v1'] = count($levelGroups[1]);
+            $levelCounts['v2'] = count($levelGroups[2]);
+            $levelCounts['v3'] = count($levelGroups[3]);
+            $levelCounts['v4'] = count($levelGroups[4]);
+            
+            return $levelCounts;
+            
+        } catch (\Exception $e) {
+            Log::error("获取直推级别统计失败，用户ID: {$userId}, 错误: " . $e->getMessage());
+            return [
+                'v1' => 0,
+                'v2' => 0,
+                'v3' => 0,
+                'v4' => 0
+            ];
+        }
     }
 }
