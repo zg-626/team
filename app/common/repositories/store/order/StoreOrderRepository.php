@@ -1577,34 +1577,54 @@ class StoreOrderRepository extends BaseRepository
     {
         $userRepository = app()->make(UserRepository::class);
         
+        // 确定起始推广用户ID
         if ($order->spread_uid) {
-            $spreadUid = $order->spread_uid;
-            $topUid = $order->top_uid;
+            $currentSpreadUid = $order->spread_uid;
         } else if ($order->is_selfbuy) {
-            $spreadUid = $user->uid;
-            $topUid = $user->spread_uid;
+            $currentSpreadUid = $user->spread_uid;
         } else {
-            $spreadUid = $user->spread_uid;
-            $topUid = $user->top_uid;
+            $currentSpreadUid = $user->spread_uid;
         }
         
-        // 给一级推广用户增加权益值（按订单金额的一定比例）
-        if ($order->extension_one > 0 && $spreadUid) {
-            $equityValueRate = 0.5; // 50%的权益值奖励比例(根据手续费的百分比)
-            $equityValue = bcmul($order->handling_fee, $equityValueRate, 2);
-            if ($equityValue > 0) {
-                $userRepository->incEquityValue($spreadUid, $equityValue, $order->order_id, 
-                    $user['nickname'] . '成功消费' . (float)$order['pay_price'] . '元,奖励推广权益值' . (float)$equityValue);
-            }
-        }
-        
-        // 给二级推广用户增加权益值（按订单金额的一定比例）
-        if ($order->extension_two > 0 && $topUid) {
-            $equityValueRate = 0.03; // 3%的权益值奖励比例(根据手续费的百分比)
-            $equityValue = bcmul($order->handling_fee, $equityValueRate, 2);
-            if ($equityValue > 0) {
-                $userRepository->incEquityValue($topUid, $equityValue, $order->order_id, 
-                    $user['nickname'] . '成功消费' . (float)$order['pay_price'] . '元,奖励推广权益值' . (float)$equityValue);
+        // 无限级上级权益值分配
+        if ($currentSpreadUid) {
+            $baseEquityValueRate = 0.5; // 基础50%的权益值奖励比例(根据手续费的百分比)
+            $currentRate = $baseEquityValueRate;
+            $level = 1;
+            $maxLevels = 10; // 最大分配级别，防止无限循环
+            
+            while ($currentSpreadUid && $level <= $maxLevels) {
+                // 获取当前上级用户信息
+                $spreadUser = $userRepository->get($currentSpreadUid);
+                if (!$spreadUser) {
+                    break;
+                }
+                
+                // 计算当前级别的权益值奖励
+                $equityValue = bcmul($order->handling_fee, $currentRate, 2);
+                
+                if ($equityValue > 0) {
+                    // 发放权益值奖励
+                    $userRepository->incEquityValue(
+                        $currentSpreadUid, 
+                        $equityValue, 
+                        $order->order_id, 
+                        $user['nickname'] . '成功消费' . (float)$order['pay_price'] . '元,第' . $level . '级推广权益值奖励' . (float)$equityValue
+                    );
+                    
+                    // 记录日志
+                     Log::info("权益值分配 - 订单ID: {$order->order_id}, 消费用户: {$user['nickname']}({$user->uid}), 第{$level}级上级: {$spreadUser['nickname']}({$currentSpreadUid}), 奖励比例: {$currentRate}, 权益值: {$equityValue}");
+                }
+                
+                // 准备下一级：奖励减半，查找上级的上级
+                $currentRate = bcdiv($currentRate, 2, 4); // 奖励减半，保留4位小数
+                $currentSpreadUid = $spreadUser->spread_uid;
+                $level++;
+                
+                // 如果奖励比例太小，停止分配
+                if ($currentRate < 0.001) {
+                    break;
+                }
             }
         }
     }
