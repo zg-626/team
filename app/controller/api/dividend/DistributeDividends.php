@@ -120,11 +120,17 @@ class DistributeDividends extends BaseController
             Log::info("- 总手续费: {$totalHandlingFee}");
             Log::info("- 分红基数(20%): {$dividendBase}");
             Log::info("- 团长补贴池({$teamLeaderPercent}%): {$teamLeaderPool}");
-            Log::info("- 团队分红已分配: {$teamDividendResult['distributed_amount']}");
+            Log::info("- 团队分红已分配: {$totalTeamDividendAmount}");
             Log::info("- 团长补贴池剩余: {$remainingTeamLeaderPool}");
             Log::info("- 权益补贴池({$integralPercent}%): {$integralPool}");
             Log::info("- 团长补贴人数: " . count($teamLeaderResults));
             Log::info("- 权益补贴人数: " . count($integralUserResults));
+            
+            // 构造团队分红结果数据
+            $teamDividendResult = [
+                'records' => $teamDividendRecords,
+                'distributed_amount' => $totalTeamDividendAmount
+            ];
             
             // 保存补贴统计数据到数据库
             $this->saveDividendData(
@@ -139,7 +145,7 @@ class DistributeDividends extends BaseController
                 $integralPool,
                 $teamLeaderResults,
                 $integralUserResults,
-                ['records' => $teamDividendRecords, 'distributed_amount' => $totalTeamDividendAmount]
+                $teamDividendResult
             );
             
             // 记录到日志
