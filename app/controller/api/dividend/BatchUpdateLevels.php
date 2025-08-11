@@ -421,13 +421,26 @@ class BatchUpdateLevels extends BaseController
         
         // 直接从用户表获取业绩数据（这些字段已经包含了正确的计算结果）
         $personalTurnover = floatval($user['pay_price']);
-        $teamTurnover = floatval($user['spread_pay_price']);
+        $originalTeamTurnover = floatval($user['spread_pay_price']);
         
         // 获取团队所有成员ID（用于直推级别统计）
         $teamMemberIds = $this->getTeamMemberIdsWithCache($userId, $userModel);
         
-        // 记录用户业绩信息
-        echo "用户ID: {$userId} - 个人业绩: {$personalTurnover}, 团队业绩: {$teamTurnover}\n";
+        // 获取大区业绩（团队中最大的单个业绩）
+        $regionInfo = $this->getRegionTurnover($userId, $userModel, $orderModel);
+        $regionTurnover = $regionInfo['turnover'];
+        $regionUserId = $regionInfo['user_id'];
+        
+        // 计算减去大区业绩后的团队业绩
+        $teamTurnover = $originalTeamTurnover - $regionTurnover;
+        
+        // 记录详细的用户业绩信息
+        echo "用户ID: {$userId} - 个人业绩: {$personalTurnover}, 原始团队业绩: {$originalTeamTurnover}";
+        if ($regionTurnover > 0 && $regionUserId > 0) {
+            echo ", 大区业绩(已减去): {$regionTurnover} (用户ID: {$regionUserId}), 最终团队业绩: {$teamTurnover}\n";
+        } else {
+            echo ", 最终团队业绩: {$teamTurnover}\n";
+        }
         
         // 获取直推用户中各级别数量（用于升级条件判断）
         $directLevelCounts = $this->getDirectPushLevelCounts($userId, $userModel);
@@ -852,7 +865,7 @@ class BatchUpdateLevels extends BaseController
      * @param int $userId 当前用户ID
      * @param User $userModel 用户模型
      * @param StoreOrder $orderModel 订单模型
-     * @return float
+     * @return array ['turnover' => float, 'user_id' => int]
      */
     private function getRegionTurnover($userId, $userModel, $orderModel)
     {
@@ -861,10 +874,11 @@ class BatchUpdateLevels extends BaseController
             $teamMemberIds = $this->getTeamMemberIds($userId, $userModel);
             
             if (empty($teamMemberIds) || count($teamMemberIds) <= 1) {
-                return 0; // 没有团队成员或只有自己
+                return ['turnover' => 0, 'user_id' => 0]; // 没有团队成员或只有自己
             }
             
             $maxTurnover = 0;
+            $maxUserId = 0;
             
             // 计算每个团队成员的个人业绩，找出最大值
             foreach ($teamMemberIds as $memberId) {
@@ -882,14 +896,15 @@ class BatchUpdateLevels extends BaseController
                 $memberTurnover = $memberStats['turnover'] ?? 0;
                 if ($memberTurnover > $maxTurnover) {
                     $maxTurnover = $memberTurnover;
+                    $maxUserId = $memberId;
                 }
             }
             
-            return $maxTurnover;
+            return ['turnover' => $maxTurnover, 'user_id' => $maxUserId];
             
         } catch (\Exception $e) {
             Log::error("获取大区业绩失败，用户ID: {$userId}, 错误: " . $e->getMessage());
-            return 0;
+            return ['turnover' => 0, 'user_id' => 0];
         }
     }
     
