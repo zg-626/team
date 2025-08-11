@@ -1622,7 +1622,7 @@ class StoreOrderRepository extends BaseRepository
                 $level++;
                 
                 // 如果奖励比例太小，停止分配
-                if ($currentRate < 0.001) {
+                if ($currentRate < 0.01) {
                     break;
                 }
             }
