@@ -460,10 +460,8 @@ class StoreOrderRepository extends BaseRepository
                 //自动打印订单
                 $this->autoPrinter($order->order_id, $order->mer_id);
             }
-            if ($groupOrder->user->spread_uid) {
-                Queue::push(UserBrokerageLevelJob::class, ['uid' => $groupOrder->user->spread_uid, 'type' => 'spread_pay_num', 'inc' => 1]);
-                Queue::push(UserBrokerageLevelJob::class, ['uid' => $groupOrder->user->spread_uid, 'type' => 'spread_money', 'inc' => $groupOrder->pay_price]);
-            }
+            // 无限级团队业绩统计（可配置层级）
+            $this->updateMultiLevelSpreadStats($groupOrder->uid, $groupOrder->pay_price, 1);
             app()->make(UserRepository::class)->update($groupOrder->uid, [
                 'pay_count' => Db::raw('pay_count+' . count($groupOrder->orderList)),
                 'pay_price' => Db::raw('pay_price+' . $groupOrder->pay_price),
@@ -3453,6 +3451,103 @@ class StoreOrderRepository extends BaseRepository
                 'mark' => '成功消费' . (float)$groupOrder['pay_price'] . '元,赠送权益值' . (float)$groupOrder->give_integral,
                 'balance' => $user->equity_value+$groupOrder->give_integral,
             ]);
+        }
+    }
+
+    /**
+     * 无限级团队业绩统计更新
+     * @param int $userId 下单用户ID
+     * @param float $payPrice 支付金额
+     * @param int $payNum 订单数量
+     * @param int $maxLevels 最大统计层级（可选，优先使用配置文件设置）
+     */
+    private function updateMultiLevelSpreadStats($userId, $payPrice, $payNum = 1, $maxLevels = null)
+    {
+        try {
+            // 读取配置文件设置
+            $config = config('spread_stats.spread_stats', []);
+            $businessConfig = config('spread_stats.business_rules', []);
+            
+            // 确定最大统计层级
+            if ($maxLevels === null) {
+                $maxLevels = $config['enable_unlimited'] ?? false ? 0 : ($config['max_levels'] ?? 6);
+            }
+            
+            // 检查最小统计金额
+            $minAmount = $businessConfig['min_amount'] ?? 0.01;
+            if ($payPrice < $minAmount) {
+                if ($config['enable_log'] ?? true) {
+                    Log::info("团队业绩统计跳过: 用户ID {$userId}, 金额 {$payPrice} 低于最小统计金额 {$minAmount}");
+                }
+                return;
+            }
+            
+            $userRepository = app()->make(UserRepository::class);
+            $currentUser = $userRepository->get($userId);
+            
+            if (!$currentUser || !$currentUser->spread_uid) {
+                return;
+            }
+            
+            $currentLevel = 1;
+            $currentSpreadUid = $currentUser->spread_uid;
+            $updatedCount = 0;
+            
+            // 是否启用日志
+            $enableLog = $config['enable_log'] ?? true;
+            if ($enableLog) {
+                Log::info("开始无限级团队业绩统计: 用户ID {$userId}, 金额 {$payPrice}, 最大层级 " . ($maxLevels == 0 ? '无限级' : $maxLevels));
+            }
+            
+            // 循环更新上级用户的团队业绩
+            while ($currentSpreadUid && ($maxLevels == 0 || $currentLevel <= $maxLevels)) {
+                // 是否使用队列处理
+                $useQueue = $config['use_queue'] ?? true;
+                $queueDelay = $config['queue_delay'] ?? 0;
+                
+                if ($useQueue) {
+                    // 使用队列异步更新，避免阻塞主流程
+                    Queue::push(UserBrokerageLevelJob::class, [
+                        'uid' => $currentSpreadUid, 
+                        'type' => 'spread_pay_num', 
+                        'inc' => $payNum
+                    ], $queueDelay);
+                    Queue::push(UserBrokerageLevelJob::class, [
+                        'uid' => $currentSpreadUid, 
+                        'type' => 'spread_money', 
+                        'inc' => $payPrice
+                    ], $queueDelay);
+                } else {
+                    // 同步更新（不推荐，可能影响性能）
+                    $parentUser = $userRepository->get($currentSpreadUid);
+                    if ($parentUser) {
+                        $parentUser->spread_pay_count = bcadd($parentUser->spread_pay_count, $payNum, 0);
+                        $parentUser->spread_pay_price = bcadd($parentUser->spread_pay_price, $payPrice, 2);
+                        $parentUser->save();
+                    }
+                }
+                
+                $updatedCount++;
+                
+                // 获取上级用户信息，继续向上查找
+                $parentUser = $userRepository->get($currentSpreadUid);
+                if (!$parentUser) {
+                    if ($enableLog) {
+                        Log::warning("团队业绩统计中断: 用户ID {$currentSpreadUid} 不存在，已统计 {$updatedCount} 级");
+                    }
+                    break;
+                }
+                
+                $currentSpreadUid = $parentUser->spread_uid;
+                $currentLevel++;
+            }
+            
+            if ($enableLog) {
+                Log::info("团队业绩统计完成: 用户ID {$userId}, 共更新 {$updatedCount} 个上级用户");
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('无限级团队业绩统计更新失败: 用户ID ' . $userId . ', 错误: ' . $e->getMessage());
         }
     }
 }
