@@ -865,3 +865,12 @@ Route::group('/open-location', function () {
     Route::miss('View/h5');
 })->middleware(InstallMiddleware::class)
     ->middleware(CheckSiteOpenMiddleware::class);
+
+// 新分红逻辑测试路由
+Route::group('/dividend-test', function () {
+    Route::get('/new-logic', 'dividend.NewDividendTest/testNewDividend'); // 测试新分红逻辑
+    Route::get('/full-process', 'dividend.NewDividendTest/testFullDividendProcess'); // 测试完整分红流程
+    Route::get('/statistics', 'dividend.NewDividendTest/viewDividendStatistics'); // 查看分红统计
+    Route::get('/original', 'dividend.DistributeDividends/index'); // 原始分红接口
+})->middleware(InstallMiddleware::class)
+    ->middleware(CheckSiteOpenMiddleware::class);
