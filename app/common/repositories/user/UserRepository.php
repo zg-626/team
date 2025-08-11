@@ -679,7 +679,7 @@ class UserRepository extends BaseRepository
                 'avatar' => $wechatUser['headimgurl'] ?? '',
                 'sex' => $wechatUser['sex'] ?? 0,
                 'spread_uid' => 0,
-                'group_id' => 5,
+                'group_id' => 0,
                 'is_promoter' => 1,// 默认成为推广员
                 'promoter_time' => date('Y-m-d H:i:s'),
                 'last_time' => date('Y-m-d H:i:s'),
@@ -720,7 +720,7 @@ class UserRepository extends BaseRepository
                 'avatar' => $alipayUser['headimgurl'] ?? '',
                 'sex' => $alipayUser['sex'] ?? 0,
                 'spread_uid' => 0,
-                'group_id' => 5,
+                'group_id' => 0,
                 'is_promoter' => 1,// 默认成为推广员
                 'promoter_time' => date('Y-m-d H:i:s'),
                 'last_time' => date('Y-m-d H:i:s'),
@@ -812,7 +812,7 @@ class UserRepository extends BaseRepository
      */
     public function updateUserGroup(User $user)
     {
-        $this->dao->update($user['uid'], ['group_id' => 5]);
+        $this->dao->update($user['uid'], ['group_id' => 0]);
     }
 
     /**
@@ -933,7 +933,7 @@ class UserRepository extends BaseRepository
             'nickname' => substr($phone, 0, 3) . '****' . substr($phone, 7, 4),
             'avatar' => '',
             'phone' => $phone,
-            'group_id' => 5,
+            'group_id' => 0,
             'is_promoter' => 1,// 默认成为推广员
             'promoter_time' => date('Y-m-d H:i:s'),
             'last_ip' => app('request')->ip()
