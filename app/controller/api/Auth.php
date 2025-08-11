@@ -466,7 +466,7 @@ class Auth extends BaseController
         if($data['group'] == null){
             $data['group']=[
                 'id' => 0,
-                'name' => '普通用户',
+                'group_name' => '普通用户',
             ];
         }
         /*// 线下订单金额统计
