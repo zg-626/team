@@ -14,6 +14,7 @@ namespace crmeb\services;
 use app\common\repositories\system\config\ConfigValueRepository;
 use think\exception\ValidateException;
 use think\facade\Cache;
+use crmeb\services\RedisCacheService;
 
 /**
  * Class AccessTokenServeService
@@ -95,22 +96,87 @@ class AccessTokenServeService extends HttpService
     }
 
     /**
-     * 获取缓存token
+     * 获取缓存token (使用Redis缓存，带错误处理)
      * @return mixed
      * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     public function getToken()
     {
         $accessTokenKey = md5($this->account . '_' . $this->secret . $this->cacheTokenPrefix);
+        
+        try {
+            // 使用Redis缓存
+            $redisCache = new RedisCacheService();
+            $cacheToken = $redisCache->get($accessTokenKey);
+            
+            if (!$cacheToken) {
+                 $getToken = $this->getTokenFromServer();
+                 // 设置Redis缓存，永不过期
+                 $redisCache->set($accessTokenKey, $getToken['access_token']);
+                 $cacheToken = $getToken['access_token'];
+             }
+            
+            $this->accessToken = $cacheToken;
+            return $cacheToken;
+            
+        } catch (\Exception $e) {
+            // Redis连接失败时，降级使用默认缓存
+            \think\facade\Log::error('Redis缓存连接失败，降级使用默认缓存: ' . $e->getMessage());
+            return $this->getTokenWithDefaultCache();
+        }
+    }
+    
+    /**
+     * 获取缓存token (原版本，使用默认缓存驱动)
+     * @return mixed
+     * @throws \Psr\SimpleCache\InvalidArgumentException
+     */
+    public function getTokenWithDefaultCache()
+    {
+        $accessTokenKey = md5($this->account . '_' . $this->secret . $this->cacheTokenPrefix);
         $cacheToken = Cache::get($accessTokenKey);
         if (!$cacheToken) {
             $getToken = $this->getTokenFromServer();
-            Cache::set($accessTokenKey, $getToken['access_token'], 300);
+            // 设置默认缓存，永不过期
+            Cache::set($accessTokenKey, $getToken['access_token']);
             $cacheToken = $getToken['access_token'];
         }
         $this->accessToken = $cacheToken;
 
         return $cacheToken;
+    }
+
+    /**
+     * 清除token缓存 (强制刷新)
+     * @return bool
+     */
+    public function clearTokenCache()
+    {
+        $accessTokenKey = md5($this->account . '_' . $this->secret . $this->cacheTokenPrefix);
+        
+        try {
+            // 清除Redis缓存
+            $redisCache = new RedisCacheService();
+            $redisCache->delete($accessTokenKey);
+            
+            // 清除默认缓存
+            Cache::delete($accessTokenKey);
+            
+            return true;
+        } catch (\Exception $e) {
+            \think\facade\Log::error('清除token缓存失败: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 强制刷新token (清除缓存后重新获取)
+     * @return mixed
+     */
+    public function refreshToken()
+    {
+        $this->clearTokenCache();
+        return $this->getToken();
     }
 
     /**
