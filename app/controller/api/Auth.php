@@ -463,8 +463,8 @@ class Auth extends BaseController
             $data['is_shop'] = 1;
         }
         // 如果会员组是null，返回默认分组名称
-        if($data->group_id == null){
-            $data->group=[
+        if($data['group_id'] == null){
+            $data['group']=[
                 'id' => 0,
                 'name' => '普通用户',
             ];
