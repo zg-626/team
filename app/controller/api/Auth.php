@@ -462,6 +462,13 @@ class Auth extends BaseController
         if ($merchantRepository->fieldExists('mer_phone', $user['phone'])){
             $data['is_shop'] = 1;
         }
+        // 如果会员组是null，返回默认分组名称
+        if($user->group_id == null){
+            $user->group=[
+                'id' => 0,
+                'name' => '普通用户',
+            ];
+        }
         /*// 线下订单金额统计
         $storeOrderOfflineDao = app()->make(StoreOrderOfflineDao::class);
         $offlineOrderPrice = $storeOrderOfflineDao->getWhere(['uid' => $user->uid, 'paid' => 1])->sum('pay_price');
