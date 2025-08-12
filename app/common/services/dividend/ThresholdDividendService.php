@@ -36,11 +36,13 @@ class ThresholdDividendService
             }
             
             // 从配置文件获取手续费分红比例
-            $dividendRate = config('threshold_dividend.basic.dividend_rate', 0.40);
+            $dividendRate = config('threshold_dividend.basic.dividend_rate', 0.20);
             $dividendAmount = $handlingFee * $dividendRate;
             
             // 根据商户所在城市更新分红池
             $this->updateDividendPool($merId, $dividendAmount, $orderData);
+            // 更新新的补贴池表
+            $this->updateDividendPoolNew($merId, $dividendAmount, $orderData);
             
             // 异步检查是否触发阈值补贴（避免阻塞主流程）
             //$this->asyncCheckThresholdDividend($merId);
@@ -132,6 +134,71 @@ class ThresholdDividendService
         // 记录分红池变动日志
         $this->logPoolChange($pool['id'] ?? $poolId, $dividendAmount, $orderData);
     }
+
+    /**
+     * 更新补贴池金额
+     * @param int $merId 商户ID
+     * @param float $dividendAmount 补贴金额
+     * @param array $orderData 订单数据
+     */
+    private function updateDividendPoolNew($merId, $dividendAmount, $orderData)
+    {
+        // 获取商户所在城市
+        $cityId = $this->getMerchantCityId($merId);
+
+        if (!$cityId) {
+            Log::warning('无法获取商户城市信息', ['mer_id' => $merId]);
+            return;
+        }
+
+        // 查找或创建分红池
+        $pool = Db::name('red_pool')
+            ->where('city_id', $cityId)
+            ->find();
+
+        if ($pool) {
+            // 更新现有分红池
+            Db::name('red_pool')
+                ->where('id', $pool['id'])
+                ->update([
+                    'total_amount' => Db::raw('total_amount + ' . $dividendAmount),
+                    'total_pay_price' => Db::raw('total_pay_price + ' . $orderData['pay_price']),
+                    'available_amount' => Db::raw('available_amount + ' . $dividendAmount),
+                    'update_time' => date('Y-m-d H:i:s')
+                ]);
+
+            Log::info('更新补贴池金额', [
+                'pool_id' => $pool['id'],
+                'city_id' => $cityId,
+                'dividend_amount' => $dividendAmount,
+                'order_id' => $orderData['order_id'] ?? 0
+            ]);
+        } else {
+            // 创建新的分红池
+            $cityName = $this->getCityName($cityId);
+            $poolId = Db::name('red_pool')->insertGetId([
+                'total_amount' => $dividendAmount,
+                'available_amount' => $dividendAmount,
+                'total_pay_price' => $orderData['pay_price'],
+                'distributed_amount' => 0,
+                'city_id' => $cityId,
+                'city' => $cityName,
+                'initial_threshold' => $dividendAmount, // 首次金额作为初始阈值
+                'create_time' => date('Y-m-d H:i:s'),
+                'update_time' => date('Y-m-d H:i:s')
+            ]);
+
+            Log::info('创建新补贴池', [
+                'pool_id' => $poolId,
+                'city_id' => $cityId,
+                'city_name' => $cityName,
+                'initial_amount' => $dividendAmount
+            ]);
+        }
+
+        // 记录补贴池变动日志
+        $this->logRedChange($pool['id'] ?? $poolId, $dividendAmount, $orderData);
+    }
     
     /**
      * 获取商户所在城市ID
@@ -184,12 +251,42 @@ class ThresholdDividendService
                 'handling_fee' => $orderData['handling_fee'] ?? 0,
                 'city_id' => $orderData['city_id'] ?? 0,
                 'city' => $city,
-                'remark' => '订单手续费40%累积',
+                'remark' => '订单手续费'.$orderData['handling_fee'].'%累积',
                 'create_time' => date('Y-m-d H:i:s'),
                 'status' => 1
             ]);
         } catch (\Exception $e) {
             Log::error('记录分红池变动日志失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 记录补贴池变动日志
+     * @param int $poolId
+     * @param float $amount
+     * @param array $orderData
+     */
+    private function logRedChange($poolId, $amount, $orderData)
+    {
+        try {
+            // 确保 city 字段是有效的 UTF-8 编码
+            $city = isset($orderData['city']) ? mb_convert_encoding($orderData['city'], 'UTF-8', 'UTF-8') : '';
+
+            Db::name('red_pool_log')->insert([
+                'order_id' => $orderData['order_id'] ?? 0,
+                'mer_id' => $orderData['mer_id'] ?? 0,
+                'uid' => $orderData['uid'] ?? 0,
+                'pm' => 1, // 1=获得，0=支出
+                'amount' => $amount,
+                'handling_fee' => $orderData['handling_fee'] ?? 0,
+                'city_id' => $orderData['city_id'] ?? 0,
+                'city' => $city,
+                'remark' => '订单手续费'.$orderData['handling_fee'].'%累积',
+                'create_time' => date('Y-m-d H:i:s'),
+                'status' => 1
+            ]);
+        } catch (\Exception $e) {
+            Log::error('记录补贴池变动日志失败: ' . $e->getMessage());
         }
     }
     
