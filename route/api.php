@@ -847,6 +847,8 @@ Route::group('api/', function () {
         Route::any('count_up', 'api.dividend.CountUp/index');
         //补贴任务
         Route::any('distribute_dividends', 'api.dividend.DistributeDividends/index');
+        // 分红补贴任务
+        Route::any('red_dividends', 'api.dividend.RedDividends/index');
     });
 })->middleware(AllowOriginMiddleware::class)
     ->middleware(InstallMiddleware::class)
