@@ -241,9 +241,9 @@ class Order extends BaseController
             throw new ValidateException('非线下支付订单，无需审核');
         }
 
-        if ($order->paid == 1) {
+        /*if ($order->paid == 1) {
             throw new ValidateException('订单已支付，无需审核');
-        }
+        }*/
 
         // 检查是否已经审核过
         if ($order->offline_audit_status == 1) {
@@ -294,9 +294,9 @@ class Order extends BaseController
             return app('json')->fail('非线下支付订单，无需审核');
         }
 
-        if ($order->paid == 1) {
+        /*if ($order->paid == 1) {
             return app('json')->fail('订单已支付，无需审核');
-        }
+        }*/
 
         // 检查是否已经审核过
         if ($order->offline_audit_status != 0) {
