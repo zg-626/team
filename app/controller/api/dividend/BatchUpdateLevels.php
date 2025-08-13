@@ -850,6 +850,19 @@ class BatchUpdateLevels extends BaseController
      */
     private function calculateUserLevelNew($personalTurnover, $teamTurnover, $teamLevelCounts)
     {
+        // 确保 teamLevelCounts 是数组且有必要的键
+        if (!is_array($teamLevelCounts)) {
+            //Log::error("Invalid teamLevelCounts type: " . gettype($teamLevelCounts));
+            $teamLevelCounts = ['v1' => 0, 'v2' => 0, 'v3' => 0, 'v4' => 0];
+        }
+        // 确保所有键都存在
+        $teamLevelCounts = array_merge([
+            'v1' => 0,
+            'v2' => 0,
+            'v3' => 0,
+            'v4' => 0
+        ], $teamLevelCounts);
+
         // 新的级别配置（修改后）
         // V1: 个人2万，团队30万（减去大区业绩）
         // V2: 个人2万，团队里面两个V1
