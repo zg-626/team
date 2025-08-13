@@ -170,13 +170,15 @@ class StoreOrder extends BaseController
                 return app('json')->fail('支付凭证已上传，请等待审核');
             }
             
-            // 更新订单支付凭证，但不设置为已支付，等待审核
+            // 更新订单支付凭证，设置为已支付，等待审核
             $groupOrder->payment_voucher = $paymentVoucher;
+            $groupOrder->paid = 1; // 设置为已支付
             $groupOrder->offline_audit_status = 0; // 设置为待审核状态
             $groupOrder->save();
             
             // 同时更新子订单的支付凭证
             foreach ($groupOrder->orderList as $order) {
+                $order->paid = 1;
                 $order->payment_voucher = $paymentVoucher;
                 $order->offline_audit_status = 0; // 设置为待审核状态
                 $order->save();
