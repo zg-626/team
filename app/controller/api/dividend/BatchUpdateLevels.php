@@ -828,7 +828,7 @@ class BatchUpdateLevels extends BaseController
     private function calculateUserLevelNew($personalTurnover, $teamTurnover, $teamLevelCounts)
     {
         // 新的级别配置（修改后）
-        // V1: 个人2万，团队10万（减去大区业绩）
+        // V1: 个人2万，团队30万（减去大区业绩）
         // V2: 个人5万，团队里面两个V1
         // V3: 个人10万，团队里面两个V2
         // V4: 个人20万，团队里面两个V3
@@ -849,7 +849,7 @@ class BatchUpdateLevels extends BaseController
         }
         
         // 检查V1级别条件：个人2万 + 团队10万（减去大区业绩）
-        if ($personalTurnover >= 20000 && $teamTurnover >= 100000) {
+        if ($personalTurnover >= 20000 && $teamTurnover >= 300000) {
             return 1;
         }
         
