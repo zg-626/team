@@ -9,9 +9,11 @@ use app\common\model\store\order\StoreOrder;
 use app\common\model\user\User;
 use app\common\model\user\UserBill;
 use app\common\repositories\user\UserBillRepository;
+use think\exception\ValidateException;
 use think\facade\Db;
 use think\facade\Log;
 use crmeb\basic\BaseController;
+use think\response\Json;
 
 /**
  * 阈值补贴任务(新版补贴池)
@@ -21,13 +23,13 @@ class RedDividends extends BaseController
 {
     /**
      * 阈值补贴接口
-     * @return \think\response\Json
+     * @return Json
      */
     public function index()
     {
         try {
             $result = $this->processOrderGrowthDividends();
-            return app('json')->success($result, '分红阈值补贴任务执行完成');
+            return app('json')->success('分红执行成功', $result);
         } catch (\Exception $e) {
             Log::error('分红阈值补贴任务执行失败: ' . $e->getMessage());
             return app('json')->fail('分红阈值补贴任务执行失败: ' . $e->getMessage());
@@ -40,23 +42,23 @@ class RedDividends extends BaseController
      * 第一次分红金额为订单支付金额的 commission_rate * 0.25
      * 之后每次分红金额为上一次的1.15倍
      * 最多分36次，新订单从第1次开始，老订单不影响新订单
-     * @return \think\response\Json
+     * @return array|bool
      */
     public function processOrderGrowthDividends()
     {
         try {
             // 1. 获取红包池信息，如果不存在则不处理
             $redPool = Db::name('red_pool')
-                ->where('distribution_cycle', 'order_growth')
                 ->order('id', 'desc')
                 ->find();
 
             if (!$redPool) {
-                return app('json')->fail('红包池不存在，无需处理');
+                throw new ValidateException('红包池不存在，无需处理');
             }
 
             // 2. 计算当前总营业额
-            $totalPayPrice = $this->calculateTotalPayPrice();
+            //$totalPayPrice = $this->calculateTotalPayPrice();
+            $totalPayPrice = $redPool['total_pay_price'];
 
             // 3. 检查是否达到分红阈值（使用配置文件的阈值）
             $config = config('threshold_dividend.basic');
@@ -64,26 +66,26 @@ class RedDividends extends BaseController
             $lastThresholdAmount = (float)($redPool['last_threshold_amount'] ?: $initialThreshold);
 
             if ($totalPayPrice < $initialThreshold) {
-                return app('json')->fail('总营业额未达到初始阈值');
+                throw new ValidateException('总营业额未达到初始阈值');
             }
 
             // 4. 检查是否需要触发分红（总营业额增长15%）
             $growthThreshold = $lastThresholdAmount * 1.15;
             if ($totalPayPrice < $growthThreshold) {
-                return app('json')->fail('总营业额增长未达到15%，无需分红');
+                throw new ValidateException('总营业额增长未达到15%，无需分红');
             }
 
             // 5. 执行分红操作 - 所有订单次数+1
             $result = $this->executeOrderGrowthDividend($redPool, $totalPayPrice, $growthThreshold);
             if (!$result) {
-                return app('json')->fail('分红执行失败');
+                throw new ValidateException('分红执行失败');
             }
 
-            return app('json')->success('分红执行成功', $result);
+            return $result;
 
         } catch (\Exception $e) {
             Log::error('分红处理异常：' . $e->getMessage());
-            return app('json')->fail('分红处理异常：' . $e->getMessage());
+            throw new ValidateException('分红处理异常：' . $e->getMessage().$e->getLine());
         }
     }
 
@@ -95,12 +97,12 @@ class RedDividends extends BaseController
     {
         $totalPayPrice = Db::name('store_order')
             ->where('paid', 1)
-            ->where('refund_status', 0)
+            ->where('status', 3)
             ->where('is_del', 0)
             ->where('is_system_del', 0)
             ->sum('pay_price');
 
-        return floatval($totalPayPrice);
+        return (float)$totalPayPrice;
     }
 
 
@@ -126,7 +128,7 @@ class RedDividends extends BaseController
             // 获取所有订单
             $orders = Db::name('store_order')
                 ->where('paid', 1)
-                ->where('refund_status', 0)
+                ->where('status', 3)
                 ->where('offline_audit_status', 1)
                 ->where('is_del', 0)
                 ->where('is_system_del', 0)
@@ -160,17 +162,17 @@ class RedDividends extends BaseController
 
                     // 记录用户抵用券账单
                     $userBillRepository->incBill($order['uid'], 'coupon_amount', 'order_growth_dividend', [
-                        'link_id' => $order['id'],
+                        'link_id' => $order['order_id'],
                         'status' => 0,
-                        'title' => '获得推广抵用券',
+                        'title' => "订单号：{$order['order_sn']}，第{$newTimes}次分红",
                         'number' => $dividendAmount,
-                        'mark' => "订单增长分红，订单ID：{$order['id']}，第{$newTimes}次分红，获得推广抵用券{$dividendAmount}元",
+                        'mark' => "订单增长分红，订单ID：{$order['order_id']}，第{$newTimes}次分红，获得推广抵用券{$dividendAmount}元",
                         'balance' => 0
                     ]);
 
                     $distributedDetails[] = [
                         'uid' => $order['uid'],
-                        'order_id' => $order['id'],
+                        'order_id' => $order['order_id'],
                         'times' => $newTimes,
                         'amount' => $dividendAmount
                     ];
@@ -179,7 +181,7 @@ class RedDividends extends BaseController
                 }
 
                 // 更新订单分红次数和金额
-                Db::name('store_order')->where('id', $order['id'])->update([
+                Db::name('store_order')->where('order_id', $order['order_id'])->update([
                     'dividend_times' => $newTimes,
                     'last_dividend_amount' => $dividendAmount
                 ]);

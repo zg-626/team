@@ -9,8 +9,8 @@ return [
         // 阈值增长率（15%）
         'growth_rate' => 0.15,
         
-        // 手续费分红比例（40%）
-        'dividend_rate' => 0.40,
+        // 手续费分红比例（20%）
+        'dividend_rate' => 0.20,
         
         // 首次触发增长率（115% = 1.15）
         'initial_trigger_rate' => 1.15,
