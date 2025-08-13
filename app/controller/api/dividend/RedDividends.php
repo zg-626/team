@@ -9,6 +9,9 @@ use app\common\model\store\order\StoreOrder;
 use app\common\model\user\User;
 use app\common\model\user\UserBill;
 use app\common\repositories\user\UserBillRepository;
+use think\db\exception\DataNotFoundException;
+use think\db\exception\DbException;
+use think\db\exception\ModelNotFoundException;
 use think\exception\ValidateException;
 use think\facade\Db;
 use think\facade\Log;
@@ -63,20 +66,23 @@ class RedDividends extends BaseController
             // 3. 检查是否达到分红阈值（使用配置文件的阈值）
             $config = config('threshold_dividend.basic');
             $initialThreshold = (float)$config['default_initial_threshold'];
-            $lastThresholdAmount = (float)($redPool['last_threshold_amount'] ?: $initialThreshold);
+            $lastThresholdAmount = (float)($redPool['last_threshold_amount']);
+            if($redPool['last_threshold_amount']==0){
+                $lastThresholdAmount = $initialThreshold;
+            }
 
             if ($totalPayPrice < $initialThreshold) {
                 throw new ValidateException('总营业额未达到初始阈值');
             }
 
             // 4. 检查是否需要触发分红（总营业额增长15%）
-            $growthThreshold = $lastThresholdAmount * 1.15;
+            $growthThreshold = round($lastThresholdAmount * 1.15,2);
             if ($totalPayPrice < $growthThreshold) {
                 throw new ValidateException('总营业额增长未达到15%，无需分红');
             }
 
             // 5. 执行分红操作 - 所有订单次数+1
-            $result = $this->executeOrderGrowthDividend($redPool, $totalPayPrice, $growthThreshold);
+            $result = $this->executeOrderGrowthDividend($redPool, $growthThreshold);
             if (!$result) {
                 throw new ValidateException('分红执行失败');
             }
@@ -109,12 +115,13 @@ class RedDividends extends BaseController
     /**
      * 执行订单增长分红
      * @param array $redPool 红包池信息
-     * @param float $totalPayPrice 总营业额
      * @param float $growthThreshold 新的阈值金额
      * @return array|bool
-     * @throws \Exception
+     * @throws DataNotFoundException
+     * @throws DbException
+     * @throws ModelNotFoundException
      */
-    protected function executeOrderGrowthDividend($redPool, $totalPayPrice, $growthThreshold)
+    protected function executeOrderGrowthDividend($redPool, $growthThreshold)
     {
         // 开启事务
         Db::startTrans();
@@ -156,14 +163,14 @@ class RedDividends extends BaseController
 
                 if ($dividendAmount > 0) {
                     // TODO 不直接更新用户抵用券余额,更新用户抵用券账单,根据账单记录自动更新
-//                    User::where('uid', $order['uid'])->update([
-//                        'coupon_amount' => Db::raw("coupon_amount + {$dividendAmount}")
-//                    ]);
+                    User::where('uid', $order['uid'])->update([
+                        'coupon_amount' => Db::raw("coupon_amount + {$dividendAmount}")
+                    ]);
 
                     // 记录用户抵用券账单
                     $userBillRepository->incBill($order['uid'], 'coupon_amount', 'order_growth_dividend', [
                         'link_id' => $order['order_id'],
-                        'status' => 0,
+                        'status' => 1,
                         'title' => "订单号：{$order['order_sn']}，第{$newTimes}次分红",
                         'number' => $dividendAmount,
                         'mark' => "订单增长分红，订单ID：{$order['order_id']}，第{$newTimes}次分红，获得推广抵用券{$dividendAmount}元",
