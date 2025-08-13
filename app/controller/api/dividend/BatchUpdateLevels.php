@@ -236,7 +236,7 @@ class BatchUpdateLevels extends BaseController
                         }
                         
                     } catch (\Exception $e) {
-                        $errors[] = "用户ID {$user['uid']}: " . $e->getMessage();
+                        $errors[] = "用户ID {$user['uid']}: " . $e->getMessage() . $e->getLine();
                         Log::error("批量级别更新 - 用户 {$user['uid']} 处理失败", [
                             'error' => $e->getMessage(),
                             'trace' => $e->getTraceAsString()
