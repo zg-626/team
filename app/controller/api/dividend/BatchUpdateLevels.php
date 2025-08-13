@@ -829,22 +829,22 @@ class BatchUpdateLevels extends BaseController
     {
         // 新的级别配置（修改后）
         // V1: 个人2万，团队30万（减去大区业绩）
-        // V2: 个人5万，团队里面两个V1
-        // V3: 个人10万，团队里面两个V2
-        // V4: 个人20万，团队里面两个V3
+        // V2: 个人2万，团队里面两个V1
+        // V3: 个人2万，团队里面两个V2
+        // V4: 个人2万，团队里面两个V3
         
-        // 检查V4级别条件：个人20万 + 团队里面两个V3
-        if ($personalTurnover >= 200000 && $teamLevelCounts['v3'] >= 2) {
+        // 检查V4级别条件：个人2万 + 团队里面两个V3
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v3'] >= 2) {
             return 4;
         }
         
-        // 检查V3级别条件：个人10万 + 团队里面两个V2
-        if ($personalTurnover >= 100000 && $teamLevelCounts['v2'] >= 2) {
+        // 检查V3级别条件：个人2万 + 团队里面两个V2
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v2'] >= 2) {
             return 3;
         }
         
-        // 检查V2级别条件：个人5万 + 团队里面两个V1
-        if ($personalTurnover >= 50000 && $teamLevelCounts['v1'] >= 2) {
+        // 检查V2级别条件：个人2万 + 团队里面两个V1
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v1'] >= 2) {
             return 2;
         }
         
