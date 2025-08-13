@@ -52,8 +52,6 @@ class BatchUpdateLevels extends BaseController
     private function batchUpdateLevels($isDryRun, $forceUpdate)
     {
         $this->performanceStats['start_time'] = microtime(true);
-        //$isDryRun = $input->hasOption('dry-run');
-        //$forceUpdate = $input->hasOption('force');
 
         Log::info('开始执行批量级别更新任务（优化版）...');
         if ($isDryRun) {
@@ -72,8 +70,10 @@ class BatchUpdateLevels extends BaseController
             Log::info("开始批量更新用户级别...");
             
             // 获取在商家980消费过的用户ID（使用缓存优化）
-            $consumerUserIds = $this->getConsumerUserIds($orderModel, $forceUpdate);
-            
+            //$consumerUserIds = $this->getConsumerUserIds($orderModel, $forceUpdate);
+            // 获取所有用户id
+            $consumerUserIds = $this->getAllUserIds($userModel, $forceUpdate);
+
             if (empty($consumerUserIds)) {
                 Log::info('商家980没有消费用户，任务结束。');
                 return 0;
@@ -146,6 +146,32 @@ class BatchUpdateLevels extends BaseController
         // 缓存1小时
         Cache::set($cacheKey, $consumerUserIds, 3600);
         
+        return $consumerUserIds;
+    }
+
+    /**
+     * 获取所有用户id
+     * @param User $userModel
+     * @param bool $forceUpdate
+     * @return array
+     */
+    private function getAllUserIds($userModel, $forceUpdate = false)
+    {
+        $cacheKey = $this->cachePrefix . 'consumer_user_ids';
+
+        if (!$forceUpdate) {
+            $cachedIds = Cache::get($cacheKey);
+            if ($cachedIds !== false) {
+                $this->performanceStats['cache_hits']++;
+                return $cachedIds;
+            }
+        }
+
+        $this->performanceStats['cache_misses']++;
+        $this->performanceStats['query_count']++;
+        $consumerUserIds = $userModel->column('uid');
+        // 缓存1小时
+        Cache::set($cacheKey, $consumerUserIds, 3600);
         return $consumerUserIds;
     }
 
