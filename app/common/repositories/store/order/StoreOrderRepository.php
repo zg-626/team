@@ -441,6 +441,7 @@ class StoreOrderRepository extends BaseRepository
                 $thresholdOrdersData[] = [
                     'order_id' => $order->order_id,
                     'handling_fee' => (float)$order->handling_fee,
+                    'pay_price' => $order->pay_price,
                     'mer_id' => $order->mer_id,
                     'city_id' => $order->city_id ?? 0,
                     'city' => mb_convert_encoding($order->city ?? '未知城市', 'UTF-8', 'UTF-8'),
