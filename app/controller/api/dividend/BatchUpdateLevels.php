@@ -124,7 +124,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getConsumerUserIds($orderModel, $forceUpdate = false)
     {
-        $cacheKey = $this->cachePrefix . 'consumer_user_ids';
+        /*$cacheKey = $this->cachePrefix . 'consumer_user_ids';
         
         if (!$forceUpdate) {
             $cachedIds = Cache::get($cacheKey);
@@ -135,7 +135,7 @@ class BatchUpdateLevels extends BaseController
         }
         
         $this->performanceStats['cache_misses']++;
-        $this->performanceStats['query_count']++;
+        $this->performanceStats['query_count']++;*/
         
         $consumerUserIds = $orderModel
             ->where('paid', 1)->where('offline_audit_status', 1)
@@ -144,7 +144,7 @@ class BatchUpdateLevels extends BaseController
             ->column('uid');
         
         // 缓存1小时
-        Cache::set($cacheKey, $consumerUserIds, 3600);
+        // Cache::set($cacheKey, $consumerUserIds, 3600);
         
         return $consumerUserIds;
     }
@@ -157,21 +157,21 @@ class BatchUpdateLevels extends BaseController
      */
     private function getAllUserIds($userModel, $forceUpdate = false)
     {
-        $cacheKey = $this->cachePrefix . 'consumer_user_ids';
-
-        if (!$forceUpdate) {
-            $cachedIds = Cache::get($cacheKey);
-            if ($cachedIds !== false) {
-                $this->performanceStats['cache_hits']++;
-                return $cachedIds;
-            }
-        }
-
-        $this->performanceStats['cache_misses']++;
-        $this->performanceStats['query_count']++;
+//        $cacheKey = $this->cachePrefix . 'consumer_user_ids';
+//
+//        if (!$forceUpdate) {
+//            $cachedIds = Cache::get($cacheKey);
+//            if ($cachedIds !== false) {
+//                $this->performanceStats['cache_hits']++;
+//                return $cachedIds;
+//            }
+//        }
+//
+//        $this->performanceStats['cache_misses']++;
+//        $this->performanceStats['query_count']++;
         $consumerUserIds = $userModel->column('uid');
         // 缓存1小时
-        Cache::set($cacheKey, $consumerUserIds, 3600);
+        //Cache::set($cacheKey, $consumerUserIds, 3600);
         return $consumerUserIds;
     }
 
@@ -475,7 +475,7 @@ class BatchUpdateLevels extends BaseController
         $oldLevel = $user['group_id'] ?? 0;
         $levelUpdated = false;
         
-        if ($newLevel != $oldLevel) {
+        if ($newLevel > $oldLevel) {
             if (!$isDryRun) {
                 // 只更新系统用户表的group_id字段
                 $this->performanceStats['query_count']++;
@@ -609,7 +609,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamMemberIdsWithCache($userId, $userModel)
     {
-        $cacheKey = $this->cachePrefix . "team_members_{$userId}";
+        /*$cacheKey = $this->cachePrefix . "team_members_{$userId}";
         $teamMemberIds = Cache::get($cacheKey);
         
         if ($teamMemberIds === false || $teamMemberIds === null) {
@@ -631,7 +631,8 @@ class BatchUpdateLevels extends BaseController
                 Log::warning("缓存中的团队成员ID不是数组类型: " . gettype($teamMemberIds) . ", 用户ID: {$userId}");
                 $teamMemberIds = [$userId]; // 默认只包含自己
             }
-        }
+        }*/
+        $teamMemberIds = $this->getTeamMemberIds($userId, $userModel);
         
         return $teamMemberIds;
     }
@@ -644,7 +645,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getPersonalTurnoverWithCache($userId, $orderModel)
     {
-        $cacheKey = $this->cachePrefix . "personal_turnover_{$userId}";
+        /*$cacheKey = $this->cachePrefix . "personal_turnover_{$userId}";
         $turnover = Cache::get($cacheKey);
         
         if ($turnover === false) {
@@ -662,8 +663,15 @@ class BatchUpdateLevels extends BaseController
             Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
         } else {
             $this->performanceStats['cache_hits']++;
-        }
-        
+        }*/
+        $personalStats = $orderModel
+            ->where('uid', $userId)
+            ->where('paid', 1)->where('offline_audit_status', 1)
+            ->where('mer_id', 980)
+            ->field('sum(pay_price) as personal_turnover')
+            ->find();
+
+        $turnover = $personalStats['personal_turnover'] ?? 0;
         return $turnover;
     }
     
@@ -677,7 +685,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamTurnoverWithCache($teamMemberIds, $orderModel, $userId = 0, $userModel = null)
     {
-        $cacheKey = $this->cachePrefix . "team_turnover_" . md5(implode(',', $teamMemberIds) . "_exclude_region_{$userId}");
+        /*$cacheKey = $this->cachePrefix . "team_turnover_" . md5(implode(',', $teamMemberIds) . "_exclude_region_{$userId}");
         $turnover = Cache::get($cacheKey);
         
         if ($turnover === false) {
@@ -704,7 +712,25 @@ class BatchUpdateLevels extends BaseController
             Cache::set($cacheKey, $turnover, 1800); // 缓存30分钟
         } else {
             $this->performanceStats['cache_hits']++;
+        }*/
+
+        // 获取团队总业绩
+        $teamStats = $orderModel
+            ->whereIn('uid', $teamMemberIds)
+            ->where('paid', 1)->where('offline_audit_status', 1)
+            ->where('mer_id', 980)
+            ->field('sum(pay_price) as team_turnover')
+            ->find();
+
+        $totalTeamTurnover = $teamStats['team_turnover'] ?? 0;
+
+        // 减去大区业绩（V2及以上级别用户的团队业绩）
+        $regionTurnover = 0;
+        if ($userId > 0 && $userModel) {
+            $regionTurnover = $this->getRegionTurnover($userId, $userModel, $orderModel);
         }
+
+        $turnover = $totalTeamTurnover - $regionTurnover;
         
         return $turnover;
     }
@@ -717,7 +743,7 @@ class BatchUpdateLevels extends BaseController
      */
     private function getTeamLevelCountsWithCache($teamMemberIds, $userModel)
     {
-        $cacheKey = $this->cachePrefix . "group_ids_" . md5(implode(',', $teamMemberIds));
+        /*$cacheKey = $this->cachePrefix . "group_ids_" . md5(implode(',', $teamMemberIds));
         $levelCounts = Cache::get($cacheKey);
         
         if ($levelCounts === false) {
@@ -726,7 +752,8 @@ class BatchUpdateLevels extends BaseController
             Cache::set($cacheKey, $levelCounts, 1800); // 缓存30分钟
         } else {
             $this->performanceStats['cache_hits']++;
-        }
+        }*/
+        $levelCounts = $this->getTeamLevelCounts($teamMemberIds, $userModel);
         
         return $levelCounts;
     }
@@ -870,17 +897,17 @@ class BatchUpdateLevels extends BaseController
         // V4: 个人2万，团队里面两个V3
         
         // 检查V4级别条件：个人2万 + 团队里面两个V3
-        if ($personalTurnover >= 20000 && $teamLevelCounts['v3'] >= 2) {
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v3'] >= 3) {
             return 4;
         }
         
         // 检查V3级别条件：个人2万 + 团队里面两个V2
-        if ($personalTurnover >= 20000 && $teamLevelCounts['v2'] >= 2) {
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v2'] >= 3) {
             return 3;
         }
         
         // 检查V2级别条件：个人2万 + 团队里面两个V1
-        if ($personalTurnover >= 20000 && $teamLevelCounts['v1'] >= 2) {
+        if ($personalTurnover >= 20000 && $teamLevelCounts['v1'] >= 3) {
             return 2;
         }
         
