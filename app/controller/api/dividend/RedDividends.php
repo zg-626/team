@@ -90,7 +90,7 @@ class RedDividends extends BaseController
             return $result;
 
         } catch (\Exception $e) {
-            Log::error('分红处理异常：' . $e->getMessage());
+            Log::error('分红处理异常：' . $e->getMessage().$e->getLine());
             throw new ValidateException('分红处理异常：' . $e->getMessage().$e->getLine());
         }
     }
