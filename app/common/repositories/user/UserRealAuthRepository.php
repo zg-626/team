@@ -128,6 +128,11 @@ class UserRealAuthRepository extends BaseRepository
             ];
             
             if ($auth) {
+                // 检查是否已绑定其他用户
+                $existingAuth = $this->dao->getAuthByCard($idCard);
+                if ($existingAuth && $existingAuth->uid != $uid) {
+                    throw new ValidateException('该身份证号已绑定其他用户');
+                }
                 // 更新认证信息
                 $this->dao->update($auth->real_auth_id, $data);
             } else {

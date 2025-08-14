@@ -55,4 +55,10 @@ class UserRealAuthDao extends BaseDao
     {
         return $this->getModel()::getDB()->where('uid', $uid)->value('status') ?: 0;
     }
+
+    // 根据身份证号获取认证信息
+    public function getAuthByCard(string $idCard)
+    {
+        return $this->getModel()::getDB()->where('id_card', $idCard)->find();
+    }
 }
